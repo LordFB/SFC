@@ -1,53 +1,66 @@
-
 <template>
-	<site-nav></site-nav>
-	<div class="wrap">
-		<div class="panel">
-			<h2>Global Styles Guide</h2>
-			<p>This page explains how to provide and consume shared styles across SFC components in this project.</p>
+    <site-nav></site-nav>
+    <div class="panel">
+        <h2>Global Styles Guide</h2>
+        <p>This page explains how to provide and consume shared styles across SFC components in this project.</p>
 
-			<h3>How it works</h3>
-			<ol>
-				<li>A dedicated SFC (<code>components/site/GlobalStyles.sfc</code>) contains a <code>&lt;style global&gt;</code> block. The transformer treats styles with <code>global</code> as global CSS.</li>
-				<li>The transformer emits <code>__css_global</code> and the runtime attaches it to <code>document</code> and component shadow roots when components mount. This ensures consistent appearance across components even when they use shadow DOM.</li>
-				<li>Components should keep only local, component-specific styles in their <code>&lt;style&gt;</code> block and rely on the global stylesheet for shared tokens (colors, layout, panel backgrounds, nav, pre/code styles).</li>
-			</ol>
+        <h3>How it works</h3>
+        <ol>
+            <li>A dedicated SFC (<code>components/site/GlobalStyles.sfc</code>) contains a
+                <code>&lt;style global&gt;</code> block. The transformer treats styles with <code>global</code> as
+                global CSS.</li>
+            <li>The transformer emits <code>__css_global</code> and the runtime attaches it to <code>document</code> and
+                component shadow roots when components mount. This ensures consistent appearance across components even
+                when they use shadow DOM.</li>
+            <li>Components should keep only local, component-specific styles in their <code>&lt;style&gt;</code> block
+                and rely on the global stylesheet for shared tokens (colors, layout, panel backgrounds, nav, pre/code
+                styles).</li>
+        </ol>
 
-			<h3>Usage</h3>
-			<p>To add or modify shared styles, edit <code>components/site/GlobalStyles.sfc</code>. Use CSS variables (see <code>:root</code> in that file) so components can reference design tokens.</p>
+        <h3>Usage</h3>
+        <p>To add or modify shared styles, edit <code>components/site/GlobalStyles.sfc</code>. Use CSS variables (see
+            <code>:root</code> in that file) so components can reference design tokens.</p>
 
-			<h3>Example: Declaring a global rule</h3>
-			<pre><code>&lt;style global&gt;
+        <h3>Example: Declaring a global rule</h3>
+        <pre><code>&lt;style global&gt;
 :root { --sfc-accent: #007bff; }
 nav { background: #eee; }
 &lt;/style&gt;
 </code></pre>
 
-			<h3>Notes &amp; Best Practices</h3>
-			<ul>
-				<li>Prefer design tokens in <code>:root</code> and use <code>var(--token)</code> across components.</li>
-				<li>Keep component &lt;style&gt; blocks focused (scoped styling and small overrides).</li>
-				<li>Global styles are deduplicated by the runtime, so multiple components importing or requiring the same global CSS is safe.</li>
-			</ul>
+        <h3>Notes &amp; Best Practices</h3>
+        <ul>
+            <li>Prefer design tokens in <code>:root</code> and use <code>var(--token)</code> across components.</li>
+            <li>Keep component &lt;style&gt; blocks focused (scoped styling and small overrides).</li>
+            <li>Global styles are deduplicated by the runtime, so multiple components importing or requiring the same
+                global CSS is safe.</li>
+        </ul>
 
-		</div>
-	</div>
+    </div>
 </template>
 
 <script>
-export default {
-	tag: 'site-global-styles',
-	shadow: true,
-	connectedCallback() {
-		console.log('Global Styles Guide mounted');
-	}
-};
+    export default {
+        tag: 'site-global-styles',
+        shadow: true,
+        connectedCallback() {
+            console.log('Global Styles Guide mounted');
+        }
+    };
 </script>
 
 <style>
-.guide { padding: 1rem; }
-pre { background: #222; color: #f8f8f2; padding: 1rem; border-radius: 6px; overflow: auto; }
+    .guide {
+        padding: 1rem;
+    }
+
+    pre {
+        background: #222;
+        color: #f8f8f2;
+        padding: 1rem;
+        border-radius: 6px;
+        overflow: auto;
+    }
 </style>
 
 <route path="/site/global-styles" methods="GET" lazy="component" />
-

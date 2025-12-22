@@ -1,6 +1,5 @@
 <template>
     <site-nav></site-nav>
-    <div class="wrap">
         <div class="panel">
                 <h2>About Routing in SFC</h2>
                 <p>
@@ -60,7 +59,6 @@ attributeChangedCallback(name, oldV, newV) {
 </code></pre>
 
         </div>
-    </div>
 </template>
 
 <script type="ts">
