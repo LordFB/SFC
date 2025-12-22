@@ -12,20 +12,9 @@
       body{
         background-color: white;
         transition: all 0.3s ease;
-        opacity:1;
       }
-      body.loading{
-        overflow: hidden;
-        position: fixed;
-        width: 100vw;
-        height: 100vh;
-        top: 0;
-        left: 0;
-        background-color: rgba(255, 255, 255, 0.9);
-        z-index: 9999;
-        transition: background-color 0.3s ease;
-        opacity:0;
-      }
+      /* Keep a lightweight loading marker but avoid hiding or collapsing the page
+         to prevent visual flicker when navigating between routes. */
     </style>
   </head>
   <body>

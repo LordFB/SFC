@@ -77,20 +77,20 @@ async function navigateToRoute(path: string, pushState = true) {
 
     // Use View Transition API if available
     const performTransition = async () => {
-      // Remove old component
-      if (currentRouteElement) {
-        currentRouteElement.remove();
-        currentRouteElement = null;
-      }
-
-      // Create and mount new component
+      // Create and mount new component first to avoid a blank gap
       if (!matchedRoute.tag) {
         console.error('[router] matched route has no tag:', matchedRoute);
         return;
       }
       const el = document.createElement(matchedRoute.tag);
       document.body.appendChild(el);
+      const previous = currentRouteElement;
       currentRouteElement = el;
+
+      // Remove old component after the new one is in place
+      if (previous) {
+        try { previous.remove(); } catch (e) { console.warn(e); }
+      }
     };
 
     if ((document as any).startViewTransition && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
