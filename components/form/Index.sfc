@@ -49,6 +49,8 @@
 .form-example label { font-weight: 600; }
 .form-example input { padding: 0.5rem; border-radius: 3px; }
 .form-example button { padding: 0.7rem; background: var(--sfc-accent); color: white; border-radius: 3px; }
+.response { border-radius: var(--sfc-border-radius ); padding:0; background-color:#b0b0b0; height:max-content; font-size: 1rem; color: var(--sfc-text); }
+.response > *{ padding:25px;}
 </style>
 
 <script lang="ts">

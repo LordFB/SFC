@@ -1,95 +1,127 @@
 <style global>
-:root {
-  --sfc-bg: #c0c0c0;
-  --sfc-panel: #fbfbfb;
-  --sfc-border: #cfcdcf;
-  --sfc-accent: #007bff;
-  --sfc-text: #222;
-  --sfc-border-radius: 6px;
-}
-
-*{
-    line-height:1.5;
-}
-
-html, body {
-  height: 100%;
-  margin: 0;
-  font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
-  background: var(--sfc-bg);
-  color: var(--sfc-text);
-}
-div{
-    padding:1rem;
-}
-
-/* Shared layout */
-.wrap, .decorators_page {
-  max-width: 1100px;
-  margin: 0 auto;
-  padding: 1rem;
-}
-
-/* Panels */
-.about, .whatissfc, .example, .routing_examples, .internals, .decorator_types, .example_usage {
-  background: var(--sfc-panel);
-  border: 1px solid var(--sfc-border);
-  border-radius: 6px;
-  color: var(--sfc-text);
-}
-
-/* Nav styling (applies to both light DOM and shadow roots via injection)
-   keep simple so nav looks consistent across components */
-nav {
-  display: flex;
-  gap: 1rem;
-  background-color: #eee;
-  border-radius: 6px;
-  position:sticky;
-  top:0;
-
-  & li {
-    margin: 0;
+  @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap');
+  :root {
+    --sfc-bg: #e0e5ec;
+    --sfc-panel: #fbfbfb;
+    --sfc-border: #cfcdcf;
+    --sfc-accent: #007bff;
+    --sfc-text: #222;
+    --sfc-border-radius: 12px;
   }
-}
-nav li {
-  list-style: none;
-  cursor: pointer;
-  font-weight: 600;
-  padding: 1rem 1rem;
-}
 
-nav li:hover {
-  background-color: #ddd;
-}
+  * {
+    line-height: 1.5;
+  }
 
-.panel{
+  html,
+  body {
+    height: 100%;
+    margin: 0;
+    font-family: Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: var(--sfc-bg);
+    color: var(--sfc-text);
+  }
+
+  div {
+    padding: 1rem;
+  }
+
+  /* Shared layout */
+  .wrap,
+  .decorators_page {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 1rem;
+  }
+
+  /* Panels */
+  .about,
+  .whatissfc,
+  .example,
+  .routing_examples,
+  .internals,
+  .decorator_types,
+  .example_usage {
+    background: var(--sfc-panel);
+    border: 1px solid var(--sfc-border);
+    border-radius: 6px;
+    color: var(--sfc-text);
+  }
+
+  /* Nav styling (applies to both light DOM and shadow roots via injection)
+   keep simple so nav looks consistent across components */
+  nav {
+    display: flex;
+    gap: 1rem;
+    background-color: #eee;
+    border-radius: 6px;
+    position: sticky;
+    top: 0;
+
+    & li {
+      margin: 0;
+    }
+
+    box-shadow: 6px 6px 12px rgba(0, 0, 0, 0.15),
+    -6px -6px 12px rgba(255, 255, 255, 0.7);
+  }
+
+  nav li {
+    list-style: none;
+    cursor: pointer;
+    font-weight: 600;
+    padding: 1rem 1rem;
+  }
+
+  nav li:hover {
+    background-color: #ddd;
+  }
+
+  .panel {
     background: var(--sfc-panel);
     border-radius: var(--sfc-border-radius);
-    max-width:1000px;
-    margin:25px auto;
-}
+    max-width: 1000px;
+    margin: 25px auto;
+    box-shadow:
+      12px 12px 24px rgba(0, 0, 0, 0.2),
+      -12px -12px 24px rgba(255, 255, 255, 0.8);
+  }
 
-/* Pre/code styles */
-pre, code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, "Roboto Mono", "Courier New", monospace;
-}
-pre {
-  background: #222;
-  color: #f8f8f2;
-  padding: 1rem;
-  border-radius: 6px;
-  overflow: auto;
-}
+  /* Pre/code styles */
+  pre {
+    box-shadow:
+  inset 6px 6px 12px rgba(0, 0, 0, 0.85),
+  inset -6px -6px 12px rgba(255, 255, 255, 0.06);
+  }
 
-/* Buttons */
-.my-button, button {
-  padding: 8px 12px;
-  background: var(--sfc-accent);
-  color: white;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-}
-.my-button:hover, button:hover { filter: brightness(0.95); }
+  pre,
+  code {
+    font-family:
+      ui-monospace, SFMono-Regular, Menlo, Monaco, "Roboto Mono", "Courier New",
+      monospace;
+  }
+
+  pre {
+    background: #222;
+    color: #f8f8f2;
+    padding: 1rem;
+    border-radius: 6px;
+    overflow: auto;
+  }
+
+  /* Buttons */
+  .my-button,
+  button {
+    padding: 8px 12px;
+    background: var(--sfc-accent);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+
+  .my-button:hover,
+  button:hover {
+    filter: brightness(0.95);
+  }
 </style>
