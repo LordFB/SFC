@@ -1,8 +1,8 @@
 <style global>
 :root {
-  --sfc-bg: #f9f9f9;
+  --sfc-bg: #c0c0c0;
   --sfc-panel: #ffffff;
-  --sfc-border: #e6e6e6;
+  --sfc-border: #cfcdcf;
   --sfc-accent: #007bff;
   --sfc-text: #222;
 }
