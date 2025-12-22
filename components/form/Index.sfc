@@ -4,7 +4,7 @@
     <h2>Form POST Example</h2>
       Submit the form below to see how POST routing works in SFC components.<br/>
       The console logs a detailed response from the server with status 402 for demonstration purposes.
-    <form method="post" class="form-example">
+    <form class="form-example">
       <label for="name">Name:</label>
       <input type="text" id="name" name="name" />
 
