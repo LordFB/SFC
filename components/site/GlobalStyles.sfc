@@ -99,6 +99,7 @@
     font-family:
       ui-monospace, SFMono-Regular, Menlo, Monaco, "Roboto Mono", "Courier New",
       monospace;
+      font-size: 14px;
   }
 
   pre {
