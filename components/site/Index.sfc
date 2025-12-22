@@ -1,16 +1,12 @@
 <template>
   <site-nav></site-nav>
-  <div class="wrap">
-  <div class="whatissfc example">
-    <div class="about">
+  <div class="panel">
     <h2>What is SFC?</h2>
     <p>
       SFC is a powerful way to build web components
       using a single file structure that includes template, script, and style.
       This example is built with SFC components!
     </p>
-    </div>
-    <div class="quickstart">
         <h3>Quick Start - Create a component</h3>
         <pre><code>&lt;template&gt;
     &lt;div class="my-component"&gt;
@@ -40,7 +36,7 @@ export default {
 }
 &lt;/style&gt;</code></pre>
     </div>
-    <div class="routing">
+    <div class="panel">
         <h3>Routing</h3>
         <p>
           Use the <code>&lt;route&gt;</code> tag to declare routes for components. You
@@ -79,8 +75,6 @@ export default {
 
         <p>These features let you combine routing, server-side handlers, and declarative attributes in SFC components.</p>
     </div>
-  </div>
-  </div>
 </template>
 
 <script lang="ts">

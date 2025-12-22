@@ -1,7 +1,6 @@
 <template>
     <site-nav></site-nav>
-    <div class="decorators_page">
-    <div class="decorator_types">
+    <div class="panel">
         <h2>Available Decorators</h2>
         <ul>
             <li><code>@click(selector: string)</code> - Binds a click event listener to elements matching the selector.</li>
@@ -17,8 +16,6 @@
           reads that metadata during wiring and attaches the event listeners. This
           allows decorators to work with both class methods and object-style exports.
         </p>
-    </div>
-    <div class="example_usage">
         <h2>Example Usage</h2>
         <pre><code>&lt;template&gt;
     &lt;button class="my-button"&gt;Click Me&lt;/button&gt;
@@ -53,7 +50,6 @@ export default class extends HTMLElement {
                     can apply the proper timing wrapper.
                 </p>
     </div>
-</div>
 </template>
 
 <script lang="ts">

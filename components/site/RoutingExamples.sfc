@@ -1,16 +1,13 @@
 <template>
     <site-nav></site-nav>
     <div class="wrap">
-        <div class="routing_examples">
-            <div class="about">
+        <div class="panel">
                 <h2>About Routing in SFC</h2>
                 <p>
                     The SFC router is declared in-file with the <code>&lt;route&gt;</code> tag.
                     Routes may include one or more HTTP methods and support dynamic params.
                 </p>
-            </div>
 
-            <div class="hero">
                 <h3>GET &amp; Dynamic Routes</h3>
                 <p>
                     Define GET routes using the <code>methods</code> attribute. Dynamic
@@ -62,7 +59,6 @@ attributeChangedCallback(name, oldV, newV) {
 }
 </code></pre>
 
-            </div>
         </div>
     </div>
 </template>

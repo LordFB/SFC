@@ -1,10 +1,11 @@
 <style global>
 :root {
   --sfc-bg: #c0c0c0;
-  --sfc-panel: #ffffff;
+  --sfc-panel: #fbfbfb;
   --sfc-border: #cfcdcf;
   --sfc-accent: #007bff;
   --sfc-text: #222;
+  --sfc-border-radius: 6px;
 }
 
 *{
@@ -44,6 +45,12 @@ nav {
   gap: 1rem;
   background-color: #eee;
   border-radius: 6px;
+  position:sticky;
+  top:0;
+
+  & li {
+    margin: 0;
+  }
 }
 nav li {
   list-style: none;
@@ -54,6 +61,13 @@ nav li {
 
 nav li:hover {
   background-color: #ddd;
+}
+
+.panel{
+    background: var(--sfc-panel);
+    border-radius: var(--sfc-border-radius);
+    max-width:1000px;
+    margin:25px auto;
 }
 
 /* Pre/code styles */

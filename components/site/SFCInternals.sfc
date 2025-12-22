@@ -1,7 +1,7 @@
 <template>
   <site-nav></site-nav>
   <div class="wrap">
-    <div class="internals">
+    <div class="panel">
       <h2>SFC Internals</h2>
       <p>This page explains the three-stage SFC pipeline and runtime conventions.</p>
 
@@ -75,10 +75,5 @@ export default {
   }
 }
 </script>
-
-<style>
-/* Use GlobalStyles.sfc for shared panel and pre styles; keep minimal padding. */
-.internals { padding: 1rem; }
-</style>
 
 <route path="/site/sfc-internals" methods="GET" lazy="component" />
