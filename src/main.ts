@@ -18,7 +18,9 @@ const preloadCache = new Set<string>();
 // SPA Router with navigation events
 async function navigateToRoute(path: string, pushState = true) {
   console.log('[router] navigating to:', path);
-  
+  // normalize trailing slash: treat '/foo/' and '/foo' as the same
+  const normalize = (p: string) => { if (!p) return '/'; return p === '/' ? '/' : p.replace(/\/$/, '').replace(/\/$/, ''); };
+  path = normalize(path);
   // Add loading indicator
   document.body.classList.add('loading');
   
@@ -27,8 +29,9 @@ async function navigateToRoute(path: string, pushState = true) {
     let matchedRoute = null;
     for (const route of routes) {
       if (route.handlerOnly) continue;
-      const routeParams = parseRouteParams(route.path, path, route.paramNames);
-      if (route.paramNames.length > 0 ? Object.keys(routeParams).length === route.paramNames.length : route.path === path) {
+      const routePathNorm = route.path === '/' ? '/' : String(route.path).replace(/\/$/, '');
+      const routeParams = parseRouteParams(routePathNorm, path, route.paramNames);
+      if (route.paramNames.length > 0 ? Object.keys(routeParams).length === route.paramNames.length : routePathNorm === path) {
         matchedRoute = route;
         break;
       }
@@ -112,24 +115,26 @@ async function navigateToRoute(path: string, pushState = true) {
 async function preloadRoute(path: string) {
   if (preloadCache.has(path)) return;
   preloadCache.add(path);
-  
-    for (const route of routes) {
-      if (route.handlerOnly) continue;
-      const routeParams = parseRouteParams(route.path, path, route.paramNames);
-      if (route.paramNames.length > 0 ? Object.keys(routeParams).length === route.paramNames.length : route.path === path) {
-        const moduleKey = route.filePath;
-        if (!loadedModules.has(moduleKey)) {
-          console.log('[router] Preloading component:', moduleKey);
-          try {
-            await modules[moduleKey]();
-            loadedModules.set(moduleKey, true);
-          } catch (e) {
-            console.error('[router] Failed to preload:', moduleKey, e);
-          }
+  const normalize = (p: string) => { if (!p) return '/'; return p === '/' ? '/' : p.replace(/\/$/, ''); };
+  path = normalize(path);
+  for (const route of routes) {
+    if (route.handlerOnly) continue;
+    const routePathNorm = route.path === '/' ? '/' : String(route.path).replace(/\/$/, '');
+    const routeParams = parseRouteParams(routePathNorm, path, route.paramNames);
+    if (route.paramNames.length > 0 ? Object.keys(routeParams).length === route.paramNames.length : routePathNorm === path) {
+      const moduleKey = route.filePath;
+      if (!loadedModules.has(moduleKey)) {
+        console.log('[router] Preloading component:', moduleKey);
+        try {
+          await modules[moduleKey]();
+          loadedModules.set(moduleKey, true);
+        } catch (e) {
+          console.error('[router] Failed to preload:', moduleKey, e);
         }
-        break;
       }
+      break;
     }
+  }
 }
 
 // Intercept link clicks for SPA navigation
@@ -148,8 +153,9 @@ document.addEventListener('click', (e) => {
 
 // Handle browser back/forward buttons
 window.addEventListener('popstate', (e) => {
-  const path = e.state?.path || window.location.pathname;
-  navigateToRoute(path, false);
+  const raw = e.state?.path || window.location.pathname;
+  const pathNorm = raw === '/' ? '/' : String(raw).replace(/\/$/, '');
+  navigateToRoute(pathNorm, false);
 });
 
 // Preload on link hover (predictive loading)
@@ -168,7 +174,8 @@ document.addEventListener('mouseover', (e) => {
 });
 
 // Initial route on page load
-navigateToRoute(window.location.pathname, false);
+const initialPath = window.location.pathname === '/' ? '/' : String(window.location.pathname).replace(/\/$/, '');
+navigateToRoute(initialPath, false);
 
 // HMR: listen for sfc:update events from the plugin and apply them via runtime
 if (import.meta.hot) {

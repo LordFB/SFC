@@ -1,76 +1,111 @@
 <template>
     <site-nav></site-nav>
     <div class="wrap">
-    <div class="routing_examples">
-        <div class="about">
-        <h2>About Routing in SFC</h2>
-        <p>SFC allows you to define routes directly within your component files using the &lt;route&gt; tag. This makes it easy to manage routing alongside your component logic and styles.</p>
-    </div>    <div class="hero">
-        <h3>GET Routes</h3>
-        <p>Define GET routes using the &lt;route&gt; tag with the "methods" attribute set to "GET":</p>
-        <pre><code>&lt;route path="/my-component" methods="GET" lazy="component" /&gt;</code></pre>
-        <p>This sets up a route to load your component when the specified path is accessed via a GET request.</p>
-        <h3>POST Routes</h3>
-        <p>Define POST routes for handling form submissions or API requests:</p>
-        <pre><code>&lt;route path="/product/add" methods="POST" /&gt;</code></pre>
-        <p>This allows your component to respond to POST requests at the specified path.</p>
-        <pre><code>&lt;route path="/product/:id" methods="GET" /&gt; </code></pre>
-        <p>Access route parameters in your component using <code>this.params</code>:</p>
-        <pre><code>connectedCallback() {
-    console.log("Product ID:", this.params.id);
-}</code></pre>
-        <p>This allows you to handle dynamic data based on the route parameters.</p>
-        <h3 class="post-data">
-            handling POST Data
-        </h3>
-        <p>To handle POST data in your component, you can access the data sent in the request using <code>this.postData</code> within your component's methods. Here's an example:</p>
-        <pre><code>connectedCallback() {
-    console.log("POST Data:", this.postData);
-}</code></pre>
-        <p>This allows you to process the data sent in the POST request, such as form submissions or API payloads.</p>
+        <div class="routing_examples">
+            <div class="about">
+                <h2>About Routing in SFC</h2>
+                <p>
+                    The SFC router is declared in-file with the <code>&lt;route&gt;</code> tag.
+                    Routes may include one or more HTTP methods and support dynamic params.
+                </p>
+            </div>
 
+            <div class="hero">
+                <h3>GET &amp; Dynamic Routes</h3>
+                <p>
+                    Define GET routes using the <code>methods</code> attribute. Dynamic
+                    segments are supported using <code>/:paramName</code> and are exposed
+                    to your component as <code>this.params</code>.
+                </p>
+                <pre><code>&lt;route path="/my-component" methods="GET" lazy="component" /&gt;</code></pre>
+                <pre><code>&lt;route path="/product/:id" methods="GET" /&gt;</code></pre>
+                <p>Example access in your component:</p>
+                <pre><code>connectedCallback() {
+    console.log('Route params:', this.params); // e.g. { id: '42' }
+}</code></pre>
+
+                <h3>POST Routes &amp; POST Data</h3>
+                <p>
+                    Declare POST routes to accept request bodies (forms, JSON, etc.).
+                    In dev, a <code>postHandler(body, req, res)</code> exported on the
+                    component (object export or class method) will be invoked server-side.
+                </p>
+                <pre><code>&lt;route path="/product/add" methods="POST" /&gt;</code></pre>
+                <p>
+                    When a POST hits your component route, middleware will call
+                    your <code>postHandler</code>; the component instance will receive
+                    the parsed data on <code>this.postData</code> so you can react to it
+                    on the client-side as well.
+                </p>
+                <pre><code>async postHandler(body, req, res) {
+    // server-side handler (dev middleware)
+    console.log('Received POST body:', body);
+    return { status: 200, body: { ok: true } };
+}
+
+// client-side example
+connectedCallback() {
+    console.log('POST data available via this.postData');
+}
+</code></pre>
+
+                <h3>Attribute Handling</h3>
+                <p>
+                    Attributes placed on the custom element are available via the
+                    DOM API (for example, <code>this.getAttribute('name')</code>), or
+                    you can observe them with <code>static get observedAttributes()</code>
+                    and respond in <code>attributeChangedCallback</code>.
+                </p>
+                <pre><code>static get observedAttributes() { return ['source']; }
+attributeChangedCallback(name, oldV, newV) {
+    console.log('attr', name, 'changed to', newV);
+}
+</code></pre>
+
+            </div>
+        </div>
     </div>
 </template>
 
 <script type="ts">
-    export default class extends HTMLElement {
-        static tag = "routing-examples";
-        static shadow = true;
-        connectedCallback() {
-        console.log("Routing Examples component mounted with params:", this.params);
-        }
-    };
+export default class extends HTMLElement {
+    static tag = "routing-examples";
+    static shadow = true;
+
+    static get observedAttributes() { return ['source']; }
+
+    connectedCallback() {
+        console.log('Routing Examples mounted with params:', this.params);
+        const source = this.getAttribute('source');
+        if (source) console.log('Initial attribute `source`:', source);
+        if (this.postData) console.log('Initial postData:', this.postData);
+    }
+
+    attributeChangedCallback(name, oldV, newV) {
+        console.log('Attribute changed', name, oldV, '=>', newV);
+    }
+
+    // Optional server-side/dev middleware handler for POST routes.
+    // signature: postHandler(body, req, res)
+    async postHandler(body, req, res) {
+        console.log('postHandler received body:', body);
+        // persist the data on the instance so client-side connectedCallback
+        // or other methods can access it via `this.postData`.
+        try {
+            this.postData = body;
+        } catch (e) {}
+        return { status: 200, body: { ok: true, received: body } };
+    }
+};
 </script>
 
 <style>
-    .wrap{
-        background-color: #f9f9f9;
-    }
-    .routing_examples {
-        border-radius: 5px;
-        margin: 2rem 0;
-        border: 1px solid #ccc;
-
-    }
-    .hero {
-        padding: 2rem;
-        background-color: #f5f5f5;
-    }
-    .about {
-        padding: 2rem;
-        background-color: #e0e0e0;
-    }
-    .example {
-        padding: 2rem;
-        background-color: #d0d0d0;
-    }
-    pre {
-        background-color: #333;
-        color: #f8f8f8;
-        padding: 1rem;
-        border-radius: 5px;
-        overflow-x: auto;
-    }
+    .wrap{ background-color: #f9f9f9; }
+    .routing_examples { border-radius: 5px; margin: 2rem 0; border: 1px solid #ccc; }
+    .hero { padding: 2rem; background-color: #f5f5f5; }
+    .about { padding: 2rem; background-color: #e0e0e0; }
+    .example { padding: 2rem; background-color: #d0d0d0; }
+    pre { background-color: #333; color: #f8f8f8; padding: 1rem; border-radius: 5px; overflow-x: auto; }
 </style>
 
-<route path="/site/routing-examples" methods="GET" lazy="component" />
+<route path="/site/routing-examples" methods="GET,POST" lazy="component" />

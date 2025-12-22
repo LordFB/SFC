@@ -1,0 +1,85 @@
+<template>
+  <site-nav></site-nav>
+  <div class="wrap">
+    <div class="internals">
+      <h2>SFC Internals</h2>
+      <p>This page explains the three-stage SFC pipeline and runtime conventions.</p>
+
+      <h3>1) Transformer</h3>
+      <p>
+        The transformer extracts the <code>&lt;template&gt;</code>,
+        <code>&lt;script&gt;</code>, and <code>&lt;style&gt;</code> blocks and
+        emits an ESM module. The script is imported via a <code>?sfc-script</code>
+        virtual loader so original exports are preserved.
+      </p>
+
+      <h3>2) Plugin (build/dev)</h3>
+      <p>
+        The Vite plugin preprocesses decorators (Babel/AST or fallback regex) and
+        attaches metadata like <code>__sfc_decorators</code>. It also discovers
+        routes and exposes a runtime route manifest. In dev the plugin adds a
+        POST middleware that invokes a component's <code>postHandler</code> when
+        a matching route receives a POST.
+      </p>
+
+      <h3>3) Runtime</h3>
+      <p>
+        The runtime provides <code>defineComponent()</code> to register custom
+        elements, wire decorator metadata, interpolate templates, and attach
+        styles (preferring <code>adoptedStyleSheets</code> with a simple cache).
+      </p>
+
+      <h3>4) Build output</h3>
+      <p>
+        During production builds the plugin can emit a static HTML file per
+        discovered route. Files are written into the output directory as
+        <code>dist/&lt;path&gt;/index.html</code>. Parameterized segments become
+        bracketed directories (for example <code>/users/:id</code> →
+        <code>dist/users/[id]/index.html</code>), and a <code>routes-manifest.json</code>
+        is available in the build output to enumerate route metadata.
+      </p>
+      <p>
+        Notes: these static HTML files reference the primary JS chunk produced
+        by the build (e.g. <code>/assets/index-&lt;hash&gt;.js</code>). Static
+        hosting alone does not provide server-side POST handling — the plugin's
+        dev middleware implements POST handling only during `vite dev`. For
+        production POST endpoints either wire server routes using
+        <code>routes-manifest.json</code> or implement serverless functions
+        that call the same handler logic.
+      </p>
+
+      <h3>Decorator &amp; Wiring Notes</h3>
+      <p>
+        Decorators are converted into a metadata array on methods or prototypes.
+        At connected time the runtime reads that metadata and binds listeners or
+        timing wrappers (debounce/throttle) to the instance methods.
+      </p>
+
+      <h3>Styles &amp; SCSS</h3>
+      <p>
+        The transformer supports <code>lang="scss"</code> and will lazily import
+        <code>sass</code> to compile styles. Styles are deduped using a small hash
+        and applied either as <code>CSSStyleSheet</code> or a fallback <code>&lt;style&gt;</code>.
+      </p>
+
+    </div>
+  </div>
+</template>
+
+<script lang="ts">
+export default {
+  tag: 'site-sfc-internals',
+  shadow: true,
+  connectedCallback() {
+    console.log('SFC Internals mounted');
+  }
+}
+</script>
+
+<style>
+  .wrap { padding: 1rem; }
+  .internals { background: #fafafa; padding: 1.25rem; border-radius: 6px; border:1px solid #e6e6e6 }
+  pre { background:#333; color:#f8f8f2; padding:0.5rem; border-radius:4px }
+</style>
+
+<route path="/site/sfc-internals" methods="GET" lazy="component" />

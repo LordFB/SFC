@@ -3,6 +3,7 @@
     <li data-url="/site/">Home</li>
     <li data-url="/site/routing-examples">Routing Examples</li>
     <li data-url="/site/decorators">Decorators</li>
+    <li data-url="/site/sfc-internals">SFC Internals</li>
     <li data-url="/site/form">Forms</li>
   </nav>
 </template>
@@ -20,7 +21,9 @@
     @click("li")
     onClick(e) {
         console.log("Nav item clicked:", e.target.innerText);
-        window.location = e.target.getAttribute("data-url") || "/site/routing-examples";
+        // Use full navigation for demo; router may intercept links in app runtime.
+        const url = e.target.getAttribute("data-url") || "/site/routing-examples";
+        window.location.href = url;
     }
         
   }

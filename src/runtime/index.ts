@@ -25,6 +25,10 @@ export type ComponentOptions = {
 
 export function parseRouteParams(pathPattern: string, currentPath: string, paramNames: string[]): Record<string, string> {
   const params: Record<string, string> = {};
+  // Normalize trailing slashes for matching
+  const normalize = (p: string) => { if (!p) return '/'; return p === '/' ? '/' : String(p).replace(/\/$/, ''); };
+  pathPattern = normalize(pathPattern);
+  currentPath = normalize(currentPath);
   const regexPattern = pathPattern.replace(/:([a-zA-Z_][a-zA-Z0-9_]*)/g, '([^/]+)');
   const regex = new RegExp('^' + regexPattern + '$');
   const match = currentPath.match(regex);
@@ -392,7 +396,7 @@ export function defineComponent(optsOrCtor: any) {
           (this as any).__sfc_listeners = [];
         }
       }
-      if (typeof opts.connectedCallback === 'function') opts.connectedCallback.call(this);
+      // already invoked above; do not call twice
     }
     disconnectedCallback() {
       if (opts.disconnectedCallback) {

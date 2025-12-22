@@ -10,6 +10,13 @@
             <li><code>@debounce(delay: int)</code> - Debounces the execution of a method by the specified delay in milliseconds.</li>
             <li><code>@throttle(delay: int)</code> - Throttles the execution of a method to once every specified delay in milliseconds.</li>
         </ul>
+
+        <p>
+          Under the hood the plugin transforms decorator syntax into metadata (attached
+          as <code>__sfc_decorators</code> on methods or the prototype). The runtime
+          reads that metadata during wiring and attaches the event listeners. This
+          allows decorators to work with both class methods and object-style exports.
+        </p>
     </div>
     <div class="example_usage">
         <h2>Example Usage</h2>
@@ -38,7 +45,13 @@ export default class extends HTMLElement {
     background-color: #0056b3;
 }
 &lt;/style&gt;</code></pre>
-        <p>In this example, the <code>@click</code> decorator binds the <code>onButtonClick</code> method to the click event of the button with the class <code>my-button</code>. When the button is clicked, it logs a message to the console.</p>
+                <p>In this example, the <code>@click</code> decorator binds the <code>onButtonClick</code> method to the click event of the button with the class <code>my-button</code>. When the button is clicked, it logs a message to the console.</p>
+                <p>
+                    Use <code>@debounce(300)</code> or <code>@throttle(200)</code> above methods to
+                    control invocation timing for expensive handlers (search boxes, resize,
+                    scroll handlers, etc.). The plugin preserves decorator args so the runtime
+                    can apply the proper timing wrapper.
+                </p>
     </div>
 </div>
 </template>

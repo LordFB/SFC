@@ -42,22 +42,40 @@ export default {
     </div>
     <div class="routing">
         <h3>Routing</h3>
-        <p>Define routes for your components using the &lt;route&gt; tag:</p>
+        <p>
+          Use the <code>&lt;route&gt;</code> tag to declare routes for components. You
+          may list multiple HTTP methods (comma separated) and use dynamic segments
+          with <code>/:param</code> — those params are available on the instance as
+          <code>this.params</code>.
+        </p>
         <pre><code>&lt;route path="/my-component" methods="GET" lazy="component" /&gt;</code></pre>
-        <p>This sets up a route to load your component when the specified path is accessed.</p>
+
         <h3>POST routes</h3>
-        <p>You can also define POST routes for handling form submissions or API requests:</p>
+        <p>
+          POST routes accept request bodies (form data or JSON). In dev the Vite
+          middleware will call a <code>postHandler(body, req, res)</code> exported
+          from the component (object export or class method). The instance will
+          also receive the parsed payload on <code>this.postData</code> so client
+          code can react when it's mounted.
+        </p>
         <pre><code>&lt;route path="/product/add" methods="POST" /&gt;</code></pre>
-        <p>This allows your component to respond to POST requests at the specified path.</p>
-        <h3>POST/GET Parameters</h3>
-        <pre><code>&lt;route path="/product/:id" methods="GET" /&gt; </code></pre>
-        <p>Access route parameters in your component using <code>this.params</code>:</p>
+
+        <h3>Route Parameters</h3>
+        <pre><code>&lt;route path="/product/:id" methods="GET" /&gt;</code></pre>
+        <p>Access dynamic params in your component:</p>
         <pre><code>connectedCallback() {
-    console.log("Product ID:", this.params.id);
+    console.log('Product ID:', this.params.id);
 }</code></pre>
-        <p>This allows you to handle dynamic data based on the route parameters.</p>
-        <p>With these features, you can easily create and manage SFC components with routing capabilities!</p>
-    </div>   
+
+        <h3>Attributes &amp; Observed Attributes</h3>
+        <p>
+          Standard DOM attributes are available via <code>this.getAttribute(name)</code>.
+          To react to changes, declare <code>static get observedAttributes()</code>
+          and implement <code>attributeChangedCallback</code>.
+        </p>
+
+        <p>These features let you combine routing, server-side handlers, and declarative attributes in SFC components.</p>
+    </div>
   </div>
   </div>
 </template>

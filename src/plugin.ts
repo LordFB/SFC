@@ -8,6 +8,7 @@ import * as parser from '@babel/parser';
 import traverse from '@babel/traverse';
 import generate from '@babel/generator';
 import * as t from '@babel/types';
+import ts from 'typescript';
 
 export default function sfcPlugin(): Plugin {
   const virtualModuleId = 'virtual:routes';
@@ -103,6 +104,24 @@ export default function sfcPlugin(): Plugin {
   return {
     name: 'vite-plugin-sfc',
     enforce: 'pre',
+
+    // Try to guide Vite/Rollup to produce a single JS bundle by inlining dynamic imports
+    // and preventing manual chunking where possible. This is a best-effort change; the
+    // build may still split depending on user config and dependencies.
+    config() {
+      return {
+        build: {
+          rollupOptions: {
+            // allow Rollup to inline dynamic imports where safe
+            inlineDynamicImports: true,
+            output: {
+              // unset manualChunks to reduce split-chunk heuristics
+              manualChunks: undefined
+            }
+          }
+        }
+      };
+    },
 
     // simple in-memory cache: id -> { mtime, code }
     _sfcCache: new Map(),
@@ -344,6 +363,8 @@ export default function sfcPlugin(): Plugin {
                       path.insertAfter(assigns);
                     }
                   },
+
+                  
                   ClassExpression(path) {
                     // handle similar to ClassDeclaration by ensuring a variable name
                     const cls = path.node;
@@ -539,8 +560,46 @@ export default function sfcPlugin(): Plugin {
           }
           return finalCode;
         } catch (e) {
-          // As a last resort, return a stripped version without decorator tokens
-          try { return simplePreprocess(scriptContent || '') || 'export default {}'; } catch (ee) { return 'export default {}'; }
+          // If esbuild failed, try using TypeScript's transpileModule to strip types
+          try {
+            const transpiled = ts.transpileModule(preprocessed || scriptContent || '', {
+              compilerOptions: {
+                target: ts.ScriptTarget.ES2022,
+                module: ts.ModuleKind.ES2022,
+                experimentalDecorators: true,
+                jsx: ts.JsxEmit.Preserve
+              }
+            });
+            let finalCode = transpiled.outputText || (preprocessed || scriptContent || 'export default {}');
+            // simple injection for anonymous class decorator metadata (same as before)
+            try {
+              if (/export\s+default\s+class/.test(scriptContent || '')) {
+                const assigns: string[] = [];
+                const methodRe = /@([A-Za-z_$][\w$]*)\s*(?:\s*\(\s*(?:(['\"])\3([^\2]*?)\2\s*)?\)\s*)?\s*([A-Za-z_$][\w$]*)\s*\(/g;
+                let mm: RegExpExecArray | null;
+                while ((mm = methodRe.exec(scriptContent || '')) !== null) {
+                  const dec = mm[1];
+                  const arg = mm[3] || '';
+                  const method = mm[4];
+                  assigns.push(`if (typeof __SFC_CLS__ !== 'undefined') { try { __SFC_CLS__.prototype.${method}.__sfc_decorators = [{type:'${dec}', args:[${arg ? `'${arg}'` : ''}]}]; } catch(e){} }`);
+                }
+                if (assigns.length) finalCode = finalCode + '\n' + assigns.join('\n');
+              }
+            } catch (ee) {}
+
+            const cacheKey = real + '::script';
+            try { const cache = (this as any)._sfcCache; const stat = fs.statSync(file); cache.set(cacheKey, { mtime: stat.mtimeMs, code: finalCode }); } catch (ee) {}
+            try {
+              const debugDir = path.resolve(process.cwd(), '.sfc-debug');
+              if (!fs.existsSync(debugDir)) fs.mkdirSync(debugDir);
+              const name = path.basename(file).replace(/[^a-z0-9.-]/gi, '_') + '.script.js';
+              fs.writeFileSync(path.join(debugDir, name), finalCode, 'utf8');
+            } catch (ee) {}
+            return finalCode;
+          } catch (ee) {
+            // As a last resort, return a stripped version without decorator tokens
+            try { return simplePreprocess(scriptContent || '') || 'export default {}'; } catch (eee) { return 'export default {}'; }
+          }
         }
       }
       return null;
@@ -604,6 +663,76 @@ export default function sfcPlugin(): Plugin {
       } catch (e) {
         return null;
       }
-    }
-  };
-}
+    },
+
+    // During build, generate standalone HTML files per discovered route that reference
+    // the primary JS chunk produced by the build. We emit assets so they land
+    // in the `dist/` output.
+    async generateBundle(_options, bundle) {
+        try {
+          const routes = getRoutes();
+          // emit a routes manifest for debugging and to inspect what was discovered
+          try {
+            this.emitFile({ type: 'asset', fileName: 'routes-manifest.json', source: JSON.stringify(routes, null, 2) });
+          } catch (e) {}
+
+          // find a primary entry chunk (first entry chunk) to reference from HTML files
+          let mainFile = null as null | string;
+          for (const [fileName, item] of Object.entries(bundle)) {
+            const it: any = item as any;
+            if (it.type === 'chunk' && it.isEntry) { mainFile = fileName; break; }
+          }
+          // fallback to any JS asset
+          if (!mainFile) {
+            for (const [fileName, item] of Object.entries(bundle)) {
+              const it: any = item as any;
+              if ((it.type === 'chunk' && fileName.endsWith('.js')) || (it.type === 'asset' && fileName.endsWith('.js'))) { mainFile = fileName; break; }
+            }
+          }
+          if (!mainFile) mainFile = 'assets/app.js';
+
+          for (const r of routes) {
+            try {
+              if (r.isRedirect === 'true' || r.isRedirect === true) {
+                // emit a small redirect HTML file at the route path
+                const destParts = (String(r.path || '/')).split('/').filter(Boolean).map(p => p.startsWith(':') ? `[${p.slice(1)}]` : p);
+                const filePath = destParts.length ? path.posix.join(...destParts, 'index.html') : 'index.html';
+                const redirectTo = r.redirect || '/';
+                const html = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=${redirectTo}"></head><body></body></html>`;
+                this.emitFile({ type: 'asset', fileName: filePath, source: html });
+                continue;
+              }
+
+              if (r.handlerOnly) {
+                // handler-only routes don't have a component to render; skip HTML generation
+                continue;
+              }
+
+              const destParts = (String(r.path || '/')).split('/').filter(Boolean).map(p => p.startsWith(':') ? `[${p.slice(1)}]` : p);
+              const filePath = destParts.length ? path.posix.join(...destParts, 'index.html') : 'index.html';
+
+              const tag = r.tag || (r.component ? (() => {
+                // try to infer tag from component filename: components/FooBar.sfc -> foo-bar
+                try {
+                  const comp = String(r.component || '');
+                  const name = path.basename(comp).replace(/\.sfc$/i, '');
+                  // convert CamelCase/ Pascal to dashed-case
+                  const dashed = name.replace(/([a-z0-9])([A-Z])/g, '$1-$2').replace(/([A-Z])([A-Z][a-z])/g, '$1-$2').toLowerCase();
+                  return dashed;
+                } catch (e) { return 'div'; }
+              })() : 'div');
+
+              const tagOpen = `<${tag}></${tag}>`;
+              const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${r.path}</title></head><body><div id="app">${tagOpen}</div><script type="module" src="/${mainFile}"></script></body></html>`;
+              this.emitFile({ type: 'asset', fileName: filePath, source: html });
+            } catch (e) {
+              // continue on per-route errors
+            }
+          }
+        } catch (e) {
+          // don't break the build on generation errors
+        }
+      }
+    };
+  }
+
