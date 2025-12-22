@@ -1,0 +1,16 @@
+<script type="ts">
+  export default{
+        postHandler(body,req,res){
+            body = JSON.parse(body);
+            return {
+                status: body.name === 'hackerman' ? 200 : 402,
+                body: {
+                    body,
+                    message: "You've posted: " + body.name + " - " + body.email
+                }
+            };
+        }
+    };
+</script>
+
+<route path="/site/form/handler" methods="POST" />

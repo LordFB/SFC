@@ -1,0 +1,107 @@
+<template>
+  <site-nav></site-nav>
+  <div class="wrap">
+  <div class="whatissfc example">
+    <div class="about">
+    <h2>What is SFC?</h2>
+    <p>
+      SFC is a powerful way to build web components
+      using a single file structure that includes template, script, and style.
+      This example is built with SFC components!
+    </p>
+    </div>
+    <div class="quickstart">
+        <h3>Quick Start - Create a component</h3>
+        <pre><code>&lt;template&gt;
+    &lt;div class="my-component"&gt;
+        &lt;h2&gt;Hello, SFC!&lt;/h2&gt;
+        &lt;p&gt;This is my first SFC component.&lt;/p&gt;
+    &lt;/div&gt;
+&lt;/template&gt;
+&lt;script lang="ts"&gt;
+export default {
+    tag: "my-component",
+    shadow: true,
+    connectedCallback() {
+        console.log("My component is connected!");
+    }
+&lt;/script&gt;
+&lt;style lang="scss"&gt;
+.my-component {
+    padding: 1rem;
+    background-color: #f0f0f0;
+
+    h2 {
+        color: #333;
+    }
+    p {
+        color: #666;
+    }
+}
+&lt;/style&gt;</code></pre>
+    </div>
+    <div class="routing">
+        <h3>Routing</h3>
+        <p>Define routes for your components using the &lt;route&gt; tag:</p>
+        <pre><code>&lt;route path="/my-component" methods="GET" lazy="component" /&gt;</code></pre>
+        <p>This sets up a route to load your component when the specified path is accessed.</p>
+        <h3>POST routes</h3>
+        <p>You can also define POST routes for handling form submissions or API requests:</p>
+        <pre><code>&lt;route path="/product/add" methods="POST" /&gt;</code></pre>
+        <p>This allows your component to respond to POST requests at the specified path.</p>
+        <h3>POST/GET Parameters</h3>
+        <pre><code>&lt;route path="/product/:id" methods="GET" /&gt; </code></pre>
+        <p>Access route parameters in your component using <code>this.params</code>:</p>
+        <pre><code>connectedCallback() {
+    console.log("Product ID:", this.params.id);
+}</code></pre>
+        <p>This allows you to handle dynamic data based on the route parameters.</p>
+        <p>With these features, you can easily create and manage SFC components with routing capabilities!</p>
+    </div>   
+  </div>
+  </div>
+</template>
+
+<script lang="ts">
+  export default {
+    tag: "x-site",
+    shadow: true,
+    connectedCallback() {
+      console.log("Component mounted with params:", this.params);
+    }
+  };
+</script>
+
+<style>
+    .wrap{
+        padding: 1rem;
+        background-color: #f9f9f9;
+    }
+    .about {
+        padding: 2rem;
+        background-color: #e0e0e0;
+    }
+  .whatissfc {
+    padding: 2rem;
+    background-color: #f5f5f5;
+    border-radius: 5px;
+}
+  .hero {
+    padding: 2rem;
+  }
+  .about {
+    padding: 2rem;
+  }
+  .example {
+    padding: 2rem;
+  }
+  pre {
+    background-color: #333;
+    color: #f8f8f2;
+    padding: 0.2rem 0.4rem;
+    border-radius: 4px;
+    padding: 1rem;
+  }
+</style>
+
+<route path="/site/" methods="GET" lazy="component" />

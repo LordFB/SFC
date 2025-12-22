@@ -1,0 +1,47 @@
+<template>
+  <nav>
+    <li data-url="/site/">Home</li>
+    <li data-url="/site/routing-examples">Routing Examples</li>
+    <li data-url="/site/decorators">Decorators</li>
+    <li data-url="/site/form">Forms</li>
+  </nav>
+</template>
+
+<script lang="ts">
+  export default class extends HTMLElement {
+    constructor() {
+      super();
+    }
+    static tag = "site-nav";
+    static shadow = true;
+    connectedCallback() {
+      console.log("Site Nav connected");
+    }
+    @click("li")
+    onClick(e) {
+        console.log("Nav item clicked:", e.target.innerText);
+        window.location = e.target.getAttribute("data-url") || "/site/routing-examples";
+    }
+        
+  }
+</script>
+
+<style lang="scss">
+  nav {
+    display: flex;
+    gap: 1rem;
+    background-color: #eee;
+    padding: 1rem;
+    list-style: none;
+  }
+  nav li {
+    cursor: pointer;
+    font-weight: bold;
+
+    &:hover {
+      text-decoration: underline;
+    }
+  }
+</style>
+
+<route path="/site/nav" methods="GET" lazy="component" />

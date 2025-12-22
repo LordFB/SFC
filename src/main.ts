@@ -1,0 +1,187 @@
+// lazy-import components on-demand for route-based code splitting
+const modules = import.meta.glob('../components/**/*.sfc', { eager: false });
+
+import { routes } from 'virtual:routes';
+import { parseRouteParams } from './runtime/index';
+
+console.log('App started, routes:', routes);
+
+// Component loading cache to track which modules have been loaded
+const loadedModules = new Map<string, boolean>();
+
+// Current active component element
+let currentRouteElement: HTMLElement | null = null;
+
+// Preload cache for hover intent
+const preloadCache = new Set<string>();
+
+// SPA Router with navigation events
+async function navigateToRoute(path: string, pushState = true) {
+  console.log('[router] navigating to:', path);
+  
+  // Add loading indicator
+  document.body.classList.add('loading');
+  
+  try {
+    // Find matching route
+    let matchedRoute = null;
+    for (const route of routes) {
+      if (route.handlerOnly) continue;
+      const routeParams = parseRouteParams(route.path, path, route.paramNames);
+      if (route.paramNames.length > 0 ? Object.keys(routeParams).length === route.paramNames.length : route.path === path) {
+        matchedRoute = route;
+        break;
+      }
+    }
+
+    if (!matchedRoute) {
+      console.warn('[router] No route matched for path:', path);
+      // Navigate to 404 page
+      navigateToRoute('/404', pushState);
+      return;
+    }
+
+    // Handle redirect route
+    if (matchedRoute.isRedirect === 'true' && matchedRoute.redirect) {
+      const target = matchedRoute.redirect;
+      const method = matchedRoute.redirectMethod || '302';
+      // For 301, use replaceState; for 302, use pushState by default
+      if (method === '301') {
+        window.history.replaceState({ path: target }, '', target);
+      } else {
+        window.history.pushState({ path: target }, '', target);
+      }
+      // Trigger navigation to the redirect target
+      navigateToRoute(target, false);
+      return;
+    }
+
+    // Lazy-load component module if not already loaded
+    const moduleKey = matchedRoute.filePath;
+    if (!loadedModules.has(moduleKey)) {
+      console.log('[router] Loading component:', moduleKey);
+      try {
+        await modules[moduleKey]();
+        loadedModules.set(moduleKey, true);
+      } catch (e) {
+        console.error('[router] Failed to load component:', moduleKey, e);
+        return;
+      }
+    }
+
+    // Use View Transition API if available
+    const performTransition = async () => {
+      // Remove old component
+      if (currentRouteElement) {
+        currentRouteElement.remove();
+        currentRouteElement = null;
+      }
+
+      // Create and mount new component
+      if (!matchedRoute.tag) {
+        console.error('[router] matched route has no tag:', matchedRoute);
+        return;
+      }
+      const el = document.createElement(matchedRoute.tag);
+      document.body.appendChild(el);
+      currentRouteElement = el;
+    };
+
+    if ((document as any).startViewTransition && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      try {
+        await (document as any).startViewTransition(performTransition).finished;
+      } catch (e) {
+        // Fallback if transition fails
+        await performTransition();
+      }
+    } else {
+      await performTransition();
+    }
+
+    // Update browser history
+    if (pushState) {
+      window.history.pushState({ path }, '', path);
+    }
+  } finally {
+    // Remove loading indicator
+    document.body.classList.remove('loading');
+  }
+}
+
+// Preload route component on hover/intersection
+async function preloadRoute(path: string) {
+  if (preloadCache.has(path)) return;
+  preloadCache.add(path);
+  
+    for (const route of routes) {
+      if (route.handlerOnly) continue;
+      const routeParams = parseRouteParams(route.path, path, route.paramNames);
+      if (route.paramNames.length > 0 ? Object.keys(routeParams).length === route.paramNames.length : route.path === path) {
+        const moduleKey = route.filePath;
+        if (!loadedModules.has(moduleKey)) {
+          console.log('[router] Preloading component:', moduleKey);
+          try {
+            await modules[moduleKey]();
+            loadedModules.set(moduleKey, true);
+          } catch (e) {
+            console.error('[router] Failed to preload:', moduleKey, e);
+          }
+        }
+        break;
+      }
+    }
+}
+
+// Intercept link clicks for SPA navigation
+document.addEventListener('click', (e) => {
+  const target = (e.target as HTMLElement).closest('a[href]');
+  if (!target) return;
+  
+  const href = target.getAttribute('href');
+  if (!href || href.startsWith('http') || href.startsWith('//') || href.startsWith('#')) return;
+  
+  e.preventDefault();
+  if (href !== window.location.pathname) {
+    navigateToRoute(href, true);
+  }
+});
+
+// Handle browser back/forward buttons
+window.addEventListener('popstate', (e) => {
+  const path = e.state?.path || window.location.pathname;
+  navigateToRoute(path, false);
+});
+
+// Preload on link hover (predictive loading)
+let hoverTimer: number | null = null;
+document.addEventListener('mouseover', (e) => {
+  const target = (e.target as HTMLElement).closest('a[href]');
+  if (!target) return;
+  
+  const href = target.getAttribute('href');
+  if (!href || href.startsWith('http') || href.startsWith('//') || href.startsWith('#')) return;
+  
+  if (hoverTimer) clearTimeout(hoverTimer);
+  hoverTimer = window.setTimeout(() => {
+    preloadRoute(href);
+  }, 50);
+});
+
+// Initial route on page load
+navigateToRoute(window.location.pathname, false);
+
+// HMR: listen for sfc:update events from the plugin and apply them via runtime
+if (import.meta.hot) {
+	import.meta.hot.on && import.meta.hot.on('sfc:update', async (payload: any) => {
+		try {
+			const apply = (await import('/src/runtime/index')).defineComponent.__sfc_applyUpdate;
+			if (apply) apply(payload.file, { template: payload.template, css: payload.css });
+		} catch (e) {
+			// fallback: try global
+			try {
+				const rc = (window as any).defineComponent as any;
+				if (rc && rc.__sfc_applyUpdate) rc.__sfc_applyUpdate(payload.file, { template: payload.template, css: payload.css });
+			} catch (ee) {}
+		}
+	});
+}

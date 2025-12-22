@@ -1,0 +1,6 @@
+node_modules
+dist
+.sfc-debug
+.github
+.vscode
+tools

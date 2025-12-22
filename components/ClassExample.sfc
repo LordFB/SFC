@@ -1,0 +1,31 @@
+<template>
+  <input class="input" type="text" />
+  <button class="btn">Click me</button>
+  <span class="userid"></span>
+</template>
+
+<script lang="ts">
+export default class extends HTMLElement {
+  static tag = 'x-class-example';
+  constructor(){ super(); }
+  connectedCallback(){
+    //this.innerHTML = `<button class=\"btn\">Class Button</button>`;
+  }
+  @click('.btn')
+  onClick(e){
+    console.log('class click', e);
+  }
+  @input('input')
+  onInput(e){
+    console.log('Input: ', e)
+  }  
+  @change('input')
+  onChange(e){
+    console.log('Change: ', e)
+  }
+}
+</script>
+
+<style>
+.btn { padding: 8px 12px; }
+</style>

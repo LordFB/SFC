@@ -1,0 +1,79 @@
+<template>
+    <site-nav></site-nav>
+    <div class="decorators_page">
+    <div class="decorator_types">
+        <h2>Available Decorators</h2>
+        <ul>
+            <li><code>@click(selector: string)</code> - Binds a click event listener to elements matching the selector.</li>
+            <li><code>@input(selector: string)</code> - Binds an input event listener to elements matching the selector.</li>
+            <li><code>@change(selector: string)</code> - Binds a change event listener to elements matching the selector.</li>
+            <li><code>@debounce(delay: int)</code> - Debounces the execution of a method by the specified delay in milliseconds.</li>
+            <li><code>@throttle(delay: int)</code> - Throttles the execution of a method to once every specified delay in milliseconds.</li>
+        </ul>
+    </div>
+    <div class="example_usage">
+        <h2>Example Usage</h2>
+        <pre><code>&lt;template&gt;
+    &lt;button class="my-button"&gt;Click Me&lt;/button&gt;
+&lt;/template&gt;
+&lt;script lang="ts"&gt;
+export default class extends HTMLElement {
+    static tag = 'my-decorated-component';
+    @click('.my-button')
+    onButtonClick(e) {
+        console.log('Button clicked!', e);
+    }
+}
+&lt;/script&gt;
+&lt;style&gt;
+.my-button {
+    padding: 10px 20px;
+    background-color: #007bff;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+.my-button:hover {
+    background-color: #0056b3;
+}
+&lt;/style&gt;</code></pre>
+        <p>In this example, the <code>@click</code> decorator binds the <code>onButtonClick</code> method to the click event of the button with the class <code>my-button</code>. When the button is clicked, it logs a message to the console.</p>
+    </div>
+</div>
+</template>
+
+<script lang="ts">
+export default {
+    tag: 'site-decorators',
+    shadow: true,
+    connectedCallback() {
+        console.log('Decorators component mounted with params:', this.params);
+    }
+};
+</script>
+
+<style>
+    .decorators_page{
+        padding: 2rem;
+        background-color: #f5f5f5;
+    }
+    .decorator_types, .example_usage {
+        padding: 1rem;
+        margin-bottom: 2rem;
+        background-color: #f9f9f9;
+        border: 1px solid #ddd;
+        border-radius: 5px;
+    }
+    h1, h2 {
+        color: #333;
+    }
+    pre {
+        background-color: #333;
+        color: #f8f8f2;
+        padding: 1rem;
+        border-radius: 5px;
+        overflow-x: auto;
+    }
+</style>
+<route path="/site/decorators" methods="GET" lazy="component" />

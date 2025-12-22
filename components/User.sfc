@@ -1,0 +1,37 @@
+<template>
+  <div class="user">
+    <h3>User Component</h3>
+    <p>User ID: {{ id }}</p>
+  </div>
+  <button class="fetchit">FETCH!</button>
+</template>
+
+<script lang="ts">
+export default class extends HTMLElement {
+  static tag = "x-user";
+  connectedCallback() {
+    console.log("x-user connected", this.params);
+  }
+  @click(".fetchit")
+  fetchit() {
+    fetch("/example", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ key: "test", user: this.params.id }),
+    })
+      .then((res) => res.json())
+      .then(console.log);
+  }
+}
+</script>
+
+<style>
+.user {
+  padding: 12px;
+  border: 1px solid #ddd;
+}
+</style>
+
+<route path="/users/:id" methods="GET,POST" lazy="component" />

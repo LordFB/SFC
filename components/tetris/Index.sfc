@@ -1,0 +1,29 @@
+<template>
+    <div class="wrap">
+        <site-nav></site-nav>
+        <x-tetris></x-tetris>
+    </div>
+</template>
+<style lang="scss">
+.wrap {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+
+  x-tetris {
+    flex: 1;
+    height: calc(100vh - 50px);
+  }
+}
+</style>
+<script lang="ts">
+export default {
+  tag: 'x-tetris-index',
+  shadow: true,
+  connectedCallback() {
+    console.log('Tetris index connected');
+  }
+};
+</script>
+<route path="/tetris" methods="GET" />

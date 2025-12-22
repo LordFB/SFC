@@ -1,0 +1,30 @@
+<template>
+  <div class="example">
+    <h3>Example Component</h3>
+    <p>This is a test SFC.</p>
+  </div>
+</template>
+
+<script lang="ts">
+export default {
+  tag: 'x-example',
+  shadow: true,
+  connectedCallback() {
+    console.log('x-example connected', this.params);
+  },
+  postHandler(body, req, res) {
+    console.log('Handling POST for /example with body:', body);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ message: 'Data received', data: body }));
+  }
+};
+</script>
+
+<style>
+.example {
+  padding: 12px;
+  border: 1px solid #ddd;
+}
+</style>
+
+<route path="/example" methods="GET,POST" lazy="component" />
