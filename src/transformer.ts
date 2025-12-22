@@ -139,34 +139,67 @@ export async function transformSFC(code: string, id: string) {
   }
 
   // attach styles
-  // compile SCSS if requested
-  let compiledStyle = style;
-  // parse lang attribute robustly: accept lang="scss", lang='scss', or lang=scss
-  let lang = null as string | null;
-  if (styleAttrs) {
-    const lm = styleAttrs.match(/lang\s*=\s*(?:"([^"]+)"|'([^']+)'|([^\s>]+))/i);
+  // Support multiple <style> blocks and a `global` attribute on a style
+  // To avoid picking up example <style> tags inside the <template> or <script>
+  // content, scan a copy of the source with those blocks removed.
+  let scanSource = code;
+  try {
+    if (templateMatch && templateMatch[0]) scanSource = scanSource.replace(templateMatch[0], '');
+  } catch (e) {}
+  try {
+    if (scriptMatch && scriptMatch[0]) scanSource = scanSource.replace(scriptMatch[0], '');
+  } catch (e) {}
+
+  const styleRe = /<style([^>]*)>([\s\S]*?)<\/style>/gi;
+  let m: RegExpExecArray | null;
+  const localParts: string[] = [];
+  const globalParts: string[] = [];
+  while ((m = styleRe.exec(scanSource)) !== null) {
+    const attrs = m[1] || '';
+    const content = (m[2] || '').trim();
+    if (!content) continue;
+    // detect lang and global attributes
+    let lang = null as string | null;
+    const lm = attrs.match(/lang\s*=\s*(?:"([^"]+)"|'([^']+)'|([^\s>]+))/i);
     if (lm) lang = lm[1] || lm[2] || lm[3] || null;
-  }
-  if (lang && lang.toLowerCase() === 'scss' && style.trim()) {
-    try {
-      // lazily import sass (ESM-safe) to avoid startup cost if not installed
-      const sass = await import('sass');
-      const out = sass.compileString(style, { style: 'expanded' });
-      compiledStyle = out.css;
-    } catch (e) {
-      // fall back to raw style and emit a dev-time comment so devs see a warning in generated module
-      compiledStyle = style;
-      ms.append(`// [sfc] warning: failed to compile SCSS for ${id}, falling back to raw CSS. Install 'sass' to enable SCSS compilation.\n`);
+    const globalAttr = /\bglobal(?:\s*=\s*(?:"true"|'true'|true))?\b/i.test(attrs);
+
+    let compiled = content;
+    if (lang && lang.toLowerCase() === 'scss' && content) {
+      try {
+        const sass = await import('sass');
+        const out = sass.compileString(content, { style: 'expanded' });
+        compiled = out.css;
+      } catch (e) {
+        compiled = content;
+        ms.append(`// [sfc] warning: failed to compile SCSS for ${id}, falling back to raw CSS. Install 'sass' to enable SCSS compilation.\n`);
+      }
     }
+
+    if (globalAttr) globalParts.push(compiled);
+    else localParts.push(compiled);
   }
 
-  if (compiledStyle && compiledStyle.trim()) {
-    const css = compiledStyle.replace(/`/g, '\\`');
+  const localCss = localParts.length ? localParts.join('\n') : null;
+  const globalCss = globalParts.length ? globalParts.join('\n') : null;
+
+  if (localCss) {
+    const css = localCss.replace(/`/g, '\\`');
     ms.append(`const __css = ` + '`' + css + '`' + `;\n`);
-    ms.append(`function __attach(root){ attachStyles(root, __css); }\n`);
   } else {
-    ms.append(`const __css = null;\nfunction __attach(root){}\n`);
+    ms.append(`const __css = null;\n`);
   }
+
+  if (globalCss) {
+    const gcss = globalCss.replace(/`/g, '\\`');
+    ms.append(`const __css_global = ` + '`' + gcss + '`' + `;\n`);
+  } else {
+    ms.append(`const __css_global = null;\n`);
+  }
+
+  // __attach applies both local and global styles to the provided root. This ensures
+  // global styles are present inside shadow roots as well as on light DOM mounts.
+  ms.append(`function __attach(root){ if(__css) attachStyles(root, __css); if(__css_global) attachStyles(root, __css_global); }\n`);
 
   // include template as a string
   const tpl = template.replace(/`/g, '\\`');
@@ -259,6 +292,12 @@ export async function transformSFC(code: string, id: string) {
   }
 
   const finalCode = ms.toString();
+  // If global CSS was present, also emit a module-time attach to document so
+  // global styles are applied as soon as the module executes (dev + build).
+  if (globalCss) {
+    ms.append(`try{ if (typeof window !== 'undefined') { (window.__sfc_global_styles = window.__sfc_global_styles || []); window.__sfc_global_styles.push(__css_global); } if (typeof document !== 'undefined' && __css_global) { attachStyles(document, __css_global); } } catch(e) { }\n`);
+  }
+
   const map = ms.generateMap({ hires: true });
-  return { code: finalCode, map, css: compiledStyle, template };
+  return { code: ms.toString(), map, css: localCss, css_global: globalCss, template };
 }

@@ -77,9 +77,8 @@ export default {
 </script>
 
 <style>
-  .wrap { padding: 1rem; }
-  .internals { background: #fafafa; padding: 1.25rem; border-radius: 6px; border:1px solid #e6e6e6 }
-  pre { background:#333; color:#f8f8f2; padding:0.5rem; border-radius:4px }
+/* Use GlobalStyles.sfc for shared panel and pre styles; keep minimal padding. */
+.internals { padding: 1rem; }
 </style>
 
 <route path="/site/sfc-internals" methods="GET" lazy="component" />

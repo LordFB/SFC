@@ -1,5 +1,7 @@
 # SFC Framework
 
+Vibe coding FTW, A toy frontend framework!! -xoxo-
+
 A Vite plugin for building Single-File Components (`.sfc`) that compile to native Web Components (Custom Elements). Write components using familiar Vue-like syntax, but output standards-compliant web components with Shadow DOM support, SCSS compilation, and TypeScript.
 
 ## Quick Start

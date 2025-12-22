@@ -128,9 +128,16 @@ export function attachStyles(root: ShadowRoot | Element, css: string) {
   if ((attachStyles as any)._debug || DEBUG_ATTACH) console.debug('[sfc] attachStyles: appended <style> to', target, 'key=', key);
 }
 
+function getRegisteredGlobalStyles(): string[] {
+  try {
+    const g = (window as any).__sfc_global_styles;
+    return Array.isArray(g) ? g : [];
+  } catch (e) { return []; }
+}
+
 export function defineComponent(optsOrCtor: any) {
   // runtime hook: apply updates for HMR
-  (defineComponent as any).__sfc_applyUpdate = function(sourceId: string, payload: { template?: string, css?: string }) {
+  (defineComponent as any).__sfc_applyUpdate = function(sourceId: string, payload: { template?: string, css?: string, css_global?: string }) {
     try {
       // find all instances whose constructor.__sfc_source === sourceId
       const all = Array.from(document.querySelectorAll('*')) as HTMLElement[];
@@ -146,9 +153,13 @@ export function defineComponent(optsOrCtor: any) {
                 mountRoot.innerHTML = payload.template;
               } catch (e) {}
             }
-            // update styles
+            // update styles: per-component css and global css
             if (payload.css) {
               try { attachStyles((el.shadowRoot || document) as any, payload.css); } catch (e) {}
+            }
+            if (payload.css_global) {
+              try { attachStyles(document, payload.css_global); } catch (e) {}
+              try { if (el.shadowRoot) attachStyles(el.shadowRoot, payload.css_global); } catch (e) {}
             }
             // re-run decorator wiring if available
             try {
@@ -192,7 +203,11 @@ export function defineComponent(optsOrCtor: any) {
             const frag = getTemplateFragment((this.constructor as any).__sfc_template);
             mountRoot.appendChild(frag);
           }
-          // attach styles using the same mountRoot so styles scope to shadow when present
+          // attach global styles first so shadow roots receive them, then attach component styles
+          try {
+            const globals = getRegisteredGlobalStyles();
+            for (const g of globals) try { attachStyles(mountRoot as any, g); } catch (e) {}
+          } catch (e) {}
           ((this.constructor as any).__sfc_attach || (() => {}))(mountRoot);
           // defer wiring to next microtask so subclass connectedCallback can finish DOM changes
           try {
@@ -360,6 +375,11 @@ export function defineComponent(optsOrCtor: any) {
         const frag = getTemplateFragment(opts.template as string);
         mountRoot.appendChild(frag);
       }
+      // attach registered global styles into mount root so shadow roots inherit them
+      try {
+        const globals = getRegisteredGlobalStyles();
+        for (const g of globals) try { attachStyles(mountRoot as any, g); } catch (e) {}
+      } catch (e) {}
       (opts as any)._attach(mountRoot);
       // parse route params
       const route = opts.__route;

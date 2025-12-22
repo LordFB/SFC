@@ -48,6 +48,9 @@ export default {
           with <code>/:param</code> — those params are available on the instance as
           <code>this.params</code>.
         </p>
+        <p>
+          Want to learn about the shared styling system used across this demo? See the <a href="/site/global-styles">Global Styles guide</a> for details and examples of using <code>&lt;style global&gt;</code>.
+        </p>
         <pre><code>&lt;route path="/my-component" methods="GET" lazy="component" /&gt;</code></pre>
 
         <h3>POST routes</h3>
@@ -91,35 +94,9 @@ export default {
 </script>
 
 <style>
-    .wrap{
-        padding: 1rem;
-        background-color: #f9f9f9;
-    }
-    .about {
-        padding: 2rem;
-        background-color: #e0e0e0;
-    }
-  .whatissfc {
-    padding: 2rem;
-    background-color: #f5f5f5;
-    border-radius: 5px;
-}
-  .hero {
-    padding: 2rem;
-  }
-  .about {
-    padding: 2rem;
-  }
-  .example {
-    padding: 2rem;
-  }
-  pre {
-    background-color: #333;
-    color: #f8f8f2;
-    padding: 0.2rem 0.4rem;
-    border-radius: 4px;
-    padding: 1rem;
-  }
+/* Rely on GlobalStyles.sfc for shared layout and pre/code styles.
+   Keep only tiny component-specific overrides here. */
+.hero { padding: 2rem; }
 </style>
 
 <route path="/site/" methods="GET" lazy="component" />

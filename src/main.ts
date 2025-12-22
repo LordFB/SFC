@@ -1,6 +1,9 @@
 // lazy-import components on-demand for route-based code splitting
 const modules = import.meta.glob('../components/**/*.sfc', { eager: false });
 
+// Eagerly load global styles so shared appearance is applied immediately
+import '../components/site/GlobalStyles.sfc';
+
 import { routes } from 'virtual:routes';
 import { parseRouteParams } from './runtime/index';
 

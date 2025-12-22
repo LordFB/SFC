@@ -642,19 +642,22 @@ export default function sfcPlugin(): Plugin {
 
         let template = '';
         let css = '';
+        let css_global = '';
         if (transformed) {
           template = transformed.template || '';
           css = transformed.css || '';
+          css_global = transformed.css_global || '';
         } else {
           const tplMatch = src.match(/<template[^>]*>([\s\S]*?)<\/template>/i);
           const styleMatch = src.match(/<style([^>]*)>([\s\S]*?)<\/style>/i);
           template = tplMatch ? tplMatch[1].trim() : '';
           css = styleMatch ? styleMatch[2].trim() : '';
+          css_global = '';
         }
 
-        // broadcast update via vite websocket (send compiled css when available)
+        // broadcast update via vite websocket (send compiled css and global css when available)
         try {
-          server.ws.send({ type: 'custom', event: 'sfc:update', data: { file, template, css } });
+          server.ws.send({ type: 'custom', event: 'sfc:update', data: { file, template, css, css_global } });
         } catch (e) {}
 
         // return modules to be reloaded normally as well
