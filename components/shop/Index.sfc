@@ -1,212 +1,209 @@
 <template>
-  <div class="shop-layout">
-    <sfc-snow></sfc-snow>
-    <shop-nav></shop-nav>
-    <main class="shop-main">
-      <section class="hero">
-        <h1>Welcome to SFC Shop</h1>
-        <p>Your one-stop shop for premium tech accessories</p>
-        <a href="/shop/products" class="btn btn-primary">Browse Products</a>
-      </section>
-      
-      <section class="featured">
-        <h2>Featured Categories</h2>
-        <div class="categories">
-          <a href="/shop/products?category=Electronics" class="category-card">
-            <div class="icon">🎧</div>
-            <h3>Electronics</h3>
-            <p>Gadgets & devices</p>
-          </a>
-          <a href="/shop/products?category=Accessories" class="category-card">
-            <div class="icon">⌨️</div>
-            <h3>Accessories</h3>
-            <p>Enhance your setup</p>
-          </a>
-          <a href="/shop/products?category=Home%20Office" class="category-card">
-            <div class="icon">💡</div>
-            <h3>Home Office</h3>
-            <p>Work from anywhere</p>
-          </a>
-        </div>
-      </section>
-      
-      <section class="promo">
-        <div class="promo-content">
-          <h2>🔥 New Year Sale!</h2>
-          <p>Get up to 30% off on selected items</p>
-          <a href="/shop/products" class="btn btn-secondary">Shop Now</a>
-        </div>
-      </section>
-    </main>
-    
-    <footer class="shop-footer">
-      <p>&copy; 2026 SFC Shop - Built with SFC Framework</p>
-    </footer>
-  </div>
+    <div class="shop-layout">
+        <sfc-snow></sfc-snow>
+        <shop-nav></shop-nav>
+        <main class="shop-main">
+            <section class="hero">
+                <h1 class="hero__title">Welcome to SFC Shop</h1>
+                <p>Your one-stop shop for premium tech accessories</p>
+                <a href="/shop/products" class="hero__button">Browse Products</a>
+            </section>
+
+            <section class="featured">
+                <h2>Featured Categories</h2>
+                <div class="categories">
+                    <a href="/shop/products?category=Electronics" class="category-card">
+                        <div class="icon">🎧</div>
+                        <h3>Electronics</h3>
+                        <p>Gadgets & devices</p>
+                    </a>
+                    <a href="/shop/products?category=Accessories" class="category-card">
+                        <div class="icon">⌨️</div>
+                        <h3>Accessories</h3>
+                        <p>Enhance your setup</p>
+                    </a>
+                    <a href="/shop/products?category=Home%20Office" class="category-card">
+                        <div class="icon">💡</div>
+                        <h3>Home Office</h3>
+                        <p>Work from anywhere</p>
+                    </a>
+                </div>
+            </section>
+
+            <section class="promo">
+                <div class="promo-content">
+                    <h2>🔥 New Year Sale!</h2>
+                    <p>Get up to 30% off on selected items</p>
+                    <a href="/shop/products" class="btn btn-secondary">Shop Now</a>
+                </div>
+            </section>
+        </main>
+
+        <footer class="shop-footer">
+            <p>&copy; 2026 SFC Shop - Built with SFC Framework</p>
+        </footer>
+    </div>
 </template>
 
 <script lang="ts">
-export default class extends HTMLElement {
-  static tag = "shop-index";
-  
-  connectedCallback() {
-    console.log("[shop] Index loaded");
-  }
-}
+    export default class extends HTMLElement {
+        static tag = "shop-index";
+
+        connectedCallback() {
+            console.log("[shop] Index loaded");
+        }
+    }
 </script>
 
-<style>
-.shop-layout {
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-}
+<style lang="scss">
+    .shop-layout {
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
 
-.shop-main {
-  flex: 1;
-  padding: 0;
-}
+    .shop-main {
+        flex: 1;
+        padding: 0;
+    }
 
-.hero {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  padding: 80px 20px;
-  text-align: center;
-}
+    .hero {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 80px 20px;
+        text-align: center;
 
-.hero h1 {
-  font-size: 3rem;
-  margin: 0 0 16px;
-  font-weight: 700;
-}
+        &__title {
+            font-size: 3rem;
+            margin: 0 0 16px;
+            font-weight: 700;
+        }
 
-.hero p {
-  font-size: 1.25rem;
-  margin: 0 0 32px;
-  opacity: 0.9;
-}
+        &__button {
+            display: inline-block;
+            padding: 14px 32px;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.2s ease;
+            cursor: pointer;
+            border: none;
+            background: white;
+            color: #667eea;
 
-.btn {
-  display: inline-block;
-  padding: 14px 32px;
-  border-radius: 8px;
-  font-size: 1rem;
-  font-weight: 600;
-  text-decoration: none;
-  transition: all 0.2s ease;
-  cursor: pointer;
-  border: none;
-}
+            &:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+            }
+        }
+    }
 
-.btn-primary {
-  background: white;
-  color: #667eea;
-}
+    .hero p {
+        font-size: 1.25rem;
+        margin: 0 0 32px;
+        opacity: 0.9;
+    }
 
-.btn-primary:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 20px rgba(0,0,0,0.2);
-}
+    .btn-secondary {
+        background: #667eea;
+        color: white;
+    }
 
-.btn-secondary {
-  background: #667eea;
-  color: white;
-}
+    .btn-secondary:hover {
+        background: #5a6fd6;
+    }
 
-.btn-secondary:hover {
-  background: #5a6fd6;
-}
+    .featured {
+        padding: 60px 20px;
+        max-width: 1200px;
+        margin: 0 auto;
+    }
 
-.featured {
-  padding: 60px 20px;
-  max-width: 1200px;
-  margin: 0 auto;
-}
+    .featured h2 {
+        text-align: center;
+        font-size: 2rem;
+        margin: 0 0 40px;
+        color: #333;
+    }
 
-.featured h2 {
-  text-align: center;
-  font-size: 2rem;
-  margin: 0 0 40px;
-  color: #333;
-}
+    .categories {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 24px;
+    }
 
-.categories {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 24px;
-}
+    .category-card {
+        background: white;
+        border-radius: 16px;
+        padding: 32px;
+        text-align: center;
+        text-decoration: none;
+        color: inherit;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+        transition: all 0.3s ease;
+    }
 
-.category-card {
-  background: white;
-  border-radius: 16px;
-  padding: 32px;
-  text-align: center;
-  text-decoration: none;
-  color: inherit;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.08);
-  transition: all 0.3s ease;
-}
+    .category-card:hover {
+        transform: translateY(-8px);
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
+    }
 
-.category-card:hover {
-  transform: translateY(-8px);
-  box-shadow: 0 12px 40px rgba(0,0,0,0.15);
-}
+    .category-card .icon {
+        font-size: 3rem;
+        margin-bottom: 16px;
+    }
 
-.category-card .icon {
-  font-size: 3rem;
-  margin-bottom: 16px;
-}
+    .category-card h3 {
+        margin: 0 0 8px;
+        font-size: 1.25rem;
+        color: #333;
+    }
 
-.category-card h3 {
-  margin: 0 0 8px;
-  font-size: 1.25rem;
-  color: #333;
-}
+    .category-card p {
+        margin: 0;
+        color: #666;
+        font-size: 0.9rem;
+    }
 
-.category-card p {
-  margin: 0;
-  color: #666;
-  font-size: 0.9rem;
-}
+    .promo {
+        background: #f8f9fa;
+        padding: 60px 20px;
+    }
 
-.promo {
-  background: #f8f9fa;
-  padding: 60px 20px;
-}
+    .promo-content {
+        max-width: 600px;
+        margin: 0 auto;
+        text-align: center;
+        background: white;
+        border-radius: 16px;
+        padding: 48px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+    }
 
-.promo-content {
-  max-width: 600px;
-  margin: 0 auto;
-  text-align: center;
-  background: white;
-  border-radius: 16px;
-  padding: 48px;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.08);
-}
+    .promo-content h2 {
+        font-size: 1.75rem;
+        margin: 0 0 12px;
+        color: #333;
+    }
 
-.promo-content h2 {
-  font-size: 1.75rem;
-  margin: 0 0 12px;
-  color: #333;
-}
+    .promo-content p {
+        color: #666;
+        margin: 0 0 24px;
+    }
 
-.promo-content p {
-  color: #666;
-  margin: 0 0 24px;
-}
+    .shop-footer {
+        background: #333;
+        color: #999;
+        padding: 24px;
+        text-align: center;
+        font-size: 0.875rem;
+    }
 
-.shop-footer {
-  background: #333;
-  color: #999;
-  padding: 24px;
-  text-align: center;
-  font-size: 0.875rem;
-}
-
-.shop-footer p {
-  margin: 0;
-}
+    .shop-footer p {
+        margin: 0;
+    }
 </style>
 
 <route path="/shop" methods="GET" />
