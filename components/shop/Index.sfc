@@ -1,5 +1,6 @@
 <template>
   <div class="shop-layout">
+    <sfc-snow></sfc-snow>
     <shop-nav></shop-nav>
     <main class="shop-main">
       <section class="hero">
