@@ -5,3 +5,4 @@ docs
 .github
 .vscode
 tools
+shop.db-wal
