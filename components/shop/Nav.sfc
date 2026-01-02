@@ -1,0 +1,162 @@
+<template>
+  <nav class="shop-nav">
+    <div class="nav-container">
+      <a href="/shop" class="logo">
+        <span class="logo-icon">🛒</span>
+        <span class="logo-text">SFC Shop</span>
+      </a>
+      
+      <div class="nav-links">
+        <a href="/shop" class="nav-link">Home</a>
+        <a href="/shop/products" class="nav-link">Products</a>
+        <a href="/shop/orders" class="nav-link">My Orders</a>
+      </div>
+      
+      <a href="/shop/cart" class="cart-link">
+        <span class="cart-icon">🛒</span>
+        <span class="cart-count" id="cart-count">0</span>
+      </a>
+    </div>
+  </nav>
+</template>
+
+<script lang="ts">
+export default class extends HTMLElement {
+  static tag = "shop-nav";
+  
+  connectedCallback() {
+    // Defer to next microtask to ensure template is attached
+    Promise.resolve().then(() => {
+      this.loadCartCount();
+    });
+    
+    // Listen for cart updates
+    window.addEventListener('cart-updated', () => this.loadCartCount());
+  }
+  
+  async loadCartCount() {
+    try {
+      const sessionId = this.getSessionId();
+      const res = await fetch('/shop/api/cart', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'get', sessionId })
+      });
+      const data = await res.json();
+      const countEl = this.querySelector('#cart-count');
+      if (countEl && data.item_count !== undefined) {
+        countEl.textContent = data.item_count;
+        countEl.classList.toggle('has-items', data.item_count > 0);
+      }
+    } catch (err) {
+      console.error('[shop-nav] Failed to load cart count:', err);
+    }
+  }
+  
+  getSessionId() {
+    let sessionId = localStorage.getItem('shop_session');
+    if (!sessionId) {
+      sessionId = 'sess_' + Math.random().toString(36).substr(2, 9) + Date.now();
+      localStorage.setItem('shop_session', sessionId);
+    }
+    return sessionId;
+  }
+}
+</script>
+
+<style>
+.shop-nav {
+  background: white;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.nav-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-decoration: none;
+  color: #333;
+  font-weight: 700;
+  font-size: 1.25rem;
+}
+
+.logo-icon {
+  font-size: 1.5rem;
+}
+
+.nav-links {
+  display: flex;
+  gap: 32px;
+}
+
+.nav-link {
+  color: #666;
+  text-decoration: none;
+  font-weight: 500;
+  transition: color 0.2s;
+}
+
+.nav-link:hover {
+  color: #667eea;
+}
+
+.cart-link {
+  position: relative;
+  display: flex;
+  align-items: center;
+  text-decoration: none;
+  padding: 8px 16px;
+  background: #f8f9fa;
+  border-radius: 24px;
+  transition: all 0.2s;
+}
+
+.cart-link:hover {
+  background: #667eea;
+  color: white;
+}
+
+.cart-icon {
+  font-size: 1.25rem;
+}
+
+.cart-count {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  background: #e74c3c;
+  color: white;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 10px;
+  min-width: 18px;
+  text-align: center;
+  opacity: 0;
+  transform: scale(0.8);
+  transition: all 0.2s;
+}
+
+.cart-count.has-items {
+  opacity: 1;
+  transform: scale(1);
+}
+
+@media (max-width: 600px) {
+  .nav-links {
+    display: none;
+  }
+}
+</style>

@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host",
+    "dev:shop": "node shop-api-server.js",
     "dev:prod": "cross-env PROD_DEV=true vite --host --config vite.config.prod.ts",
     "dev:fast": "vite --host --force",
     "build": "vite build",
@@ -12,6 +13,7 @@
     "serve": "node server.js"
   },
   "dependencies": {
+    "better-sqlite3": "^12.5.0",
     "prismjs": "^1.30.0",
     "puppeteer": "^24.33.0"
   },

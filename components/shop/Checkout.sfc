@@ -1,0 +1,458 @@
+<template>
+  <div class="shop-layout">
+    <shop-nav></shop-nav>
+    <main class="checkout-page">
+      <h1>Checkout</h1>
+      
+      <div class="checkout-content" id="checkout-content">
+        <div class="loading">Loading...</div>
+      </div>
+    </main>
+  </div>
+</template>
+
+<script lang="ts">
+export default class extends HTMLElement {
+  static tag = "shop-checkout";
+  
+  cart = { items: [], total: 0, item_count: 0 };
+  
+  connectedCallback() {
+    // Defer to next microtask to ensure template is attached
+    Promise.resolve().then(() => {
+      this.loadCart();
+      this.setupEventListeners();
+    });
+  }
+  
+  setupEventListeners() {
+    this.addEventListener('submit', (e) => {
+      const form = (e.target as HTMLElement);
+      if (form.id === 'checkout-form') {
+        e.preventDefault();
+        this.handleSubmit(form);
+      }
+    });
+  }
+  
+  async loadCart() {
+    try {
+      const sessionId = this.getSessionId();
+      const res = await fetch('/shop/api/cart', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'get', sessionId })
+      });
+      this.cart = await res.json();
+      this.render();
+    } catch (err) {
+      console.error('[shop-checkout] Failed to load cart:', err);
+    }
+  }
+  
+  render() {
+    const content = this.querySelector('#checkout-content');
+    
+    if (this.cart.items.length === 0) {
+      content.innerHTML = `
+        <div class="empty-cart">
+          <h2>Your cart is empty</h2>
+          <p>Add some products before checking out.</p>
+          <a href="/shop/products" class="btn btn-primary">Browse Products</a>
+        </div>
+      `;
+      return;
+    }
+    
+    const shipping = this.cart.total >= 50 ? 0 : 5.99;
+    const orderTotal = this.cart.total + shipping;
+    
+    content.innerHTML = `
+      <div class="checkout-layout">
+        <div class="checkout-form">
+          <h2>Shipping Information</h2>
+          <form id="checkout-form">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="name">Full Name *</label>
+                <input type="text" id="name" name="name" required placeholder="John Doe" />
+              </div>
+              <div class="form-group">
+                <label for="email">Email Address *</label>
+                <input type="email" id="email" name="email" required placeholder="john@example.com" />
+              </div>
+            </div>
+            
+            <div class="form-group">
+              <label for="address">Shipping Address *</label>
+              <textarea id="address" name="address" required placeholder="123 Main St, City, Country 12345" rows="3"></textarea>
+            </div>
+            
+            <h2>Payment Information</h2>
+            <div class="payment-demo">
+              <p>💳 This is a demo store - no real payment required!</p>
+            </div>
+            
+            <div class="form-row">
+              <div class="form-group">
+                <label for="card">Card Number</label>
+                <input type="text" id="card" placeholder="4242 4242 4242 4242" />
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="expiry">Expiry</label>
+                <input type="text" id="expiry" placeholder="MM/YY" />
+              </div>
+              <div class="form-group">
+                <label for="cvv">CVV</label>
+                <input type="text" id="cvv" placeholder="123" />
+              </div>
+            </div>
+            
+            <button type="submit" class="btn btn-primary submit-btn" id="submit-btn">
+              Place Order - $${orderTotal.toFixed(2)}
+            </button>
+          </form>
+        </div>
+        
+        <div class="order-summary">
+          <h2>Order Summary</h2>
+          <div class="order-items">
+            ${this.cart.items.map(item => `
+              <div class="order-item">
+                <img src="${item.image}" alt="${item.name}" />
+                <div class="order-item-info">
+                  <span class="order-item-name">${item.name}</span>
+                  <span class="order-item-qty">Qty: ${item.quantity}</span>
+                </div>
+                <span class="order-item-price">$${item.subtotal.toFixed(2)}</span>
+              </div>
+            `).join('')}
+          </div>
+          <div class="summary-divider"></div>
+          <div class="summary-row">
+            <span>Subtotal</span>
+            <span>$${this.cart.total.toFixed(2)}</span>
+          </div>
+          <div class="summary-row">
+            <span>Shipping</span>
+            <span>${shipping === 0 ? 'Free' : '$' + shipping.toFixed(2)}</span>
+          </div>
+          <div class="summary-divider"></div>
+          <div class="summary-row total">
+            <span>Total</span>
+            <span>$${orderTotal.toFixed(2)}</span>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+  
+  async handleSubmit(form) {
+    const name = form.querySelector('#name').value.trim();
+    const email = form.querySelector('#email').value.trim();
+    const address = form.querySelector('#address').value.trim();
+    
+    if (!name || !email || !address) {
+      alert('Please fill in all required fields');
+      return;
+    }
+    
+    const submitBtn = this.querySelector('#submit-btn');
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Processing...';
+    
+    try {
+      const sessionId = this.getSessionId();
+      const res = await fetch('/shop/api/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'create',
+          sessionId,
+          customerInfo: { name, email, address }
+        })
+      });
+      
+      const data = await res.json();
+      
+      if (data.error) {
+        alert(data.error);
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Place Order';
+      } else {
+        // Order success - redirect to confirmation
+        window.dispatchEvent(new CustomEvent('cart-updated'));
+        window.location.href = `/shop/order/${data.order.id}`;
+      }
+    } catch (err) {
+      console.error('[shop-checkout] Failed to create order:', err);
+      alert('Failed to place order. Please try again.');
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Place Order';
+    }
+  }
+  
+  getSessionId() {
+    let sessionId = localStorage.getItem('shop_session');
+    if (!sessionId) {
+      sessionId = 'sess_' + Math.random().toString(36).substr(2, 9) + Date.now();
+      localStorage.setItem('shop_session', sessionId);
+    }
+    return sessionId;
+  }
+}
+</script>
+
+<style>
+.shop-layout {
+  min-height: 100vh;
+  background: #f8f9fa;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.checkout-page {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 32px 20px;
+}
+
+.checkout-page h1 {
+  margin: 0 0 32px;
+  font-size: 2rem;
+  color: #333;
+}
+
+.loading {
+  text-align: center;
+  padding: 48px;
+  color: #666;
+}
+
+.empty-cart {
+  text-align: center;
+  padding: 64px;
+  background: white;
+  border-radius: 16px;
+}
+
+.empty-cart h2 {
+  margin: 0 0 8px;
+}
+
+.empty-cart p {
+  color: #666;
+  margin: 0 0 24px;
+}
+
+.checkout-layout {
+  display: grid;
+  grid-template-columns: 1fr 400px;
+  gap: 32px;
+}
+
+@media (max-width: 900px) {
+  .checkout-layout {
+    grid-template-columns: 1fr;
+  }
+  
+  .order-summary {
+    order: -1;
+  }
+}
+
+.checkout-form {
+  background: white;
+  border-radius: 16px;
+  padding: 32px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+}
+
+.checkout-form h2 {
+  margin: 0 0 20px;
+  font-size: 1.25rem;
+  color: #333;
+}
+
+.checkout-form h2:not(:first-child) {
+  margin-top: 32px;
+  padding-top: 32px;
+  border-top: 1px solid #eee;
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+@media (max-width: 600px) {
+  .form-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.form-group {
+  margin-bottom: 16px;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 6px;
+  font-weight: 500;
+  color: #333;
+  font-size: 0.9rem;
+}
+
+.form-group input,
+.form-group textarea {
+  width: 100%;
+  padding: 12px 16px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  font-size: 1rem;
+  transition: all 0.2s;
+  box-sizing: border-box;
+}
+
+.form-group input:focus,
+.form-group textarea:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.form-group textarea {
+  resize: vertical;
+}
+
+.payment-demo {
+  background: #e8f4fd;
+  border: 1px solid #b8daff;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 20px;
+}
+
+.payment-demo p {
+  margin: 0;
+  color: #0c5460;
+  font-size: 0.9rem;
+}
+
+.submit-btn {
+  width: 100%;
+  margin-top: 24px;
+  padding: 16px;
+  font-size: 1.1rem;
+}
+
+.order-summary {
+  background: white;
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+  height: fit-content;
+  position: sticky;
+  top: 100px;
+}
+
+.order-summary h2 {
+  margin: 0 0 20px;
+  font-size: 1.25rem;
+  color: #333;
+}
+
+.order-items {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.order-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.order-item img {
+  width: 50px;
+  height: 50px;
+  object-fit: cover;
+  border-radius: 6px;
+}
+
+.order-item-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.order-item-name {
+  font-weight: 500;
+  font-size: 0.9rem;
+  color: #333;
+}
+
+.order-item-qty {
+  font-size: 0.8rem;
+  color: #666;
+}
+
+.order-item-price {
+  font-weight: 600;
+  color: #333;
+}
+
+.summary-divider {
+  height: 1px;
+  background: #eee;
+  margin: 16px 0;
+}
+
+.summary-row {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  color: #666;
+}
+
+.summary-row.total {
+  font-weight: 700;
+  font-size: 1.25rem;
+  color: #333;
+  margin-top: 8px;
+}
+
+.btn {
+  display: inline-block;
+  padding: 14px 24px;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 600;
+  text-decoration: none;
+  text-align: center;
+  transition: all 0.2s;
+  cursor: pointer;
+  border: none;
+}
+
+.btn-primary {
+  background: #667eea;
+  color: white;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: #5a6fd6;
+}
+
+.btn-primary:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+</style>
+
+<route path="/shop/checkout" methods="GET" />

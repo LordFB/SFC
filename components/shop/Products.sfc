@@ -1,0 +1,355 @@
+<template>
+    <div class="shop-layout">
+        <shop-nav></shop-nav>
+        <main class="products-page">
+            <div class="products-header">
+                <h1>Products</h1>
+                <div class="filters">
+                    <select id="category-filter" class="filter-select">
+                        <option value="">All Categories</option>
+                    </select>
+                    <input type="search" id="search-input" placeholder="Search products..." class="search-input" />
+                </div>
+            </div>
+
+            <div class="products-grid" id="products-grid">
+                <div class="loading">Loading products...</div>
+            </div>
+        </main>
+    </div>
+</template>
+
+<script lang="ts">
+    export default class extends HTMLElement {
+        static tag = "shop-products";
+
+        products = [];
+        filteredProducts = [];
+        categories = [];
+        searchTimeout = null;
+
+        connectedCallback() {
+            // Defer to next microtask to ensure template is attached
+            Promise.resolve().then(() => {
+                this.loadProducts();
+                this.setupEventListeners();
+            });
+        }
+
+        setupEventListeners() {
+            // Category filter change
+            const categoryFilter = this.querySelector('#category-filter');
+            categoryFilter?.addEventListener('change', () => this.filterProducts());
+
+            // Search input with debounce
+            const searchInput = this.querySelector('#search-input');
+            searchInput?.addEventListener('input', () => {
+                if (this.searchTimeout) clearTimeout(this.searchTimeout);
+                this.searchTimeout = setTimeout(() => this.filterProducts(), 300);
+            });
+
+            // Add to cart buttons (delegated)
+            this.addEventListener('click', (e) => {
+                const btn = (e.target as HTMLElement).closest('.add-to-cart-btn');
+                if (btn) this.addToCart(btn as HTMLButtonElement);
+            });
+        }
+
+        async loadProducts() {
+            try {
+                const res = await fetch('/shop/api/products', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'list' })
+                });
+                const data = await res.json();
+                this.products = data.products || [];
+                this.categories = data.categories || [];
+                this.filteredProducts = [...this.products];
+
+                this.renderCategories();
+                this.renderProducts();
+
+                // Check URL for category filter
+                const urlParams = new URLSearchParams(window.location.search);
+                const category = urlParams.get('category');
+                if (category) {
+                    const select = this.querySelector('#category-filter') as HTMLSelectElement;
+                    if (select) {
+                        select.value = category;
+                        this.filterProducts();
+                    }
+                }
+            } catch (err) {
+                console.error('[shop-products] Failed to load products:', err);
+                this.querySelector('#products-grid').innerHTML = '<div class="error">Failed to load products</div>';
+            }
+        }
+
+        filterProducts() {
+            const categoryFilter = this.querySelector('#category-filter') as HTMLSelectElement;
+            const searchInput = this.querySelector('#search-input') as HTMLInputElement;
+
+            const category = categoryFilter?.value || '';
+            const search = searchInput?.value?.toLowerCase() || '';
+
+            this.filteredProducts = this.products.filter(p => {
+                const matchCategory = !category || p.category === category;
+                const matchSearch = !search ||
+                    p.name.toLowerCase().includes(search) ||
+                    p.description.toLowerCase().includes(search);
+                return matchCategory && matchSearch;
+            });
+
+            this.renderProducts();
+        }
+
+        renderCategories() {
+            const select = this.querySelector('#category-filter');
+            if (!select) return;
+
+            const options = this.categories.map(cat =>
+                `<option value="${cat}">${cat}</option>`
+            ).join('');
+
+            select.innerHTML = '<option value="">All Categories</option>' + options;
+        }
+
+        renderProducts() {
+            const grid = this.querySelector('#products-grid');
+            if (!grid) return;
+
+            if (this.filteredProducts.length === 0) {
+                grid.innerHTML = '<div class="no-products">No products found</div>';
+                return;
+            }
+
+            grid.innerHTML = this.filteredProducts.map(p => `
+      <div class="product-card" data-id="${p.id}">
+        <a href="/shop/product/${p.id}" class="product-link">
+          <div class="product-image">
+            <img src="${p.image}" alt="${p.name}" loading="lazy" />
+          </div>
+          <div class="product-info">
+            <span class="product-category">${p.category}</span>
+            <h3 class="product-name">${p.name}</h3>
+            <p class="product-price">$${p.price.toFixed(2)}</p>
+          </div>
+        </a>
+        <button class="add-to-cart-btn" data-id="${p.id}">Add to Cart</button>
+      </div>
+    `).join('');
+        }
+
+        async addToCart(btn) {
+            const productId = parseInt(btn.dataset.id);
+
+            btn.disabled = true;
+            btn.textContent = 'Adding...';
+
+            try {
+                const sessionId = this.getSessionId();
+                const res = await fetch('/shop/api/cart', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'add', sessionId, productId, quantity: 1 })
+                });
+
+                const data = await res.json();
+
+                if (data.error) {
+                    alert(data.error);
+                } else {
+                    btn.textContent = '✓ Added!';
+                    window.dispatchEvent(new CustomEvent('cart-updated'));
+                    setTimeout(() => {
+                        btn.textContent = 'Add to Cart';
+                        btn.disabled = false;
+                    }, 1500);
+                    return;
+                }
+            } catch (err) {
+                console.error('[shop-products] Failed to add to cart:', err);
+                alert('Failed to add to cart');
+            }
+
+            btn.textContent = 'Add to Cart';
+            btn.disabled = false;
+        }
+
+        getSessionId() {
+            let sessionId = localStorage.getItem('shop_session');
+            if (!sessionId) {
+                sessionId = 'sess_' + Math.random().toString(36).substr(2, 9) + Date.now();
+                localStorage.setItem('shop_session', sessionId);
+            }
+            return sessionId;
+        }
+    }
+</script>
+
+<style>
+    .shop-layout {
+        min-height: 100vh;
+        background: #f8f9fa;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+
+    .products-page {
+        width: 100%;
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 32px 20px;
+    }
+
+    .products-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 32px;
+        flex-wrap: wrap;
+        gap: 16px;
+    }
+
+    .products-header h1 {
+        margin: 0;
+        font-size: 2rem;
+        color: #333;
+    }
+
+    .filters {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+    }
+
+    .filter-select,
+    .search-input {
+        padding: 10px 16px;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        font-size: 0.95rem;
+        background: white;
+        min-width: 180px;
+    }
+
+    .filter-select:focus,
+    .search-input:focus {
+        outline: none;
+        border-color: #667eea;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+
+    .products-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        gap: 24px;
+    }
+
+    .product-card {
+        background: white;
+        border-radius: 16px;
+        overflow: hidden;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+        transition: all 0.3s ease;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .product-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.12);
+    }
+
+    .product-link {
+        text-decoration: none;
+        color: inherit;
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .product-image {
+        aspect-ratio: 1;
+        overflow: hidden;
+        background: #f0f0f0;
+    }
+
+    .product-image img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        transition: transform 0.3s ease;
+    }
+
+    .product-card:hover .product-image img {
+        transform: scale(1.05);
+    }
+
+    .product-info {
+        padding: 20px;
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .product-category {
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: #667eea;
+        font-weight: 600;
+    }
+
+    .product-name {
+        margin: 8px 0;
+        font-size: 1.1rem;
+        color: #333;
+        flex: 1;
+    }
+
+    .product-price {
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: #333;
+        margin: 0;
+    }
+
+    .add-to-cart-btn {
+        margin: 0 20px 20px;
+        padding: 12px;
+        background: #667eea;
+        color: white;
+        border: none;
+        border-radius: 8px;
+        font-size: 0.95rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+
+    .add-to-cart-btn:hover:not(:disabled) {
+        background: #5a6fd6;
+    }
+
+    .add-to-cart-btn:disabled {
+        opacity: 0.7;
+        cursor: not-allowed;
+    }
+
+    .loading,
+    .no-products,
+    .error {
+        grid-column: 1 / -1;
+        text-align: center;
+        padding: 48px;
+        color: #666;
+        font-size: 1.1rem;
+    }
+
+    .error {
+        color: #e74c3c;
+    }
+</style>
+
+<route path="/shop/products" methods="GET" />

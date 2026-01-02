@@ -1,0 +1,60 @@
+<script type="ts">
+import { shopDb } from '../../../shop-db.js';
+
+export default {
+  postHandler(body, req, res) {
+    try {
+      body = typeof body === 'string' ? JSON.parse(body) : body;
+      const { action } = body;
+      
+      let result;
+      
+      switch (action) {
+        case 'list':
+          result = {
+            products: shopDb.getAllProducts(),
+            categories: shopDb.getCategories()
+          };
+          break;
+          
+        case 'get':
+          result = {
+            product: shopDb.getProductById(body.id)
+          };
+          break;
+          
+        case 'search':
+          result = {
+            products: shopDb.searchProducts(body.term || '')
+          };
+          break;
+          
+        case 'category':
+          result = {
+            products: shopDb.getProductsByCategory(body.category)
+          };
+          break;
+          
+        default:
+          return {
+            status: 400,
+            body: { error: 'Invalid action' }
+          };
+      }
+      
+      return {
+        status: 200,
+        body: result
+      };
+    } catch (err) {
+      console.error('[shop-api-products] Error:', err);
+      return {
+        status: 500,
+        body: { error: err.message }
+      };
+    }
+  }
+};
+</script>
+
+<route path="/shop/api/products" methods="POST" />

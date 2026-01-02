@@ -2,7 +2,7 @@
 const modules = import.meta.glob('../components/**/*.sfc', { eager: false });
 
 // Eagerly load global styles so shared appearance is applied immediately
-import '../components/site/GlobalStyles.sfc';
+import '../components/GlobalStyles.sfc';
 
 import { routes } from 'virtual:routes';
 import { parseRouteParams } from './runtime/index';
@@ -21,16 +21,21 @@ const preloadCache = new Set<string>();
 localStorage.setItem('sfc-disable-transitions', 'false');
 
 // SPA Router with navigation events
-async function navigateToRoute(path: string, pushState = true) {
-  console.log('[router] navigating to:', path);
+async function navigateToRoute(fullPath: string, pushState = true) {
+  console.log('[router] navigating to:', fullPath);
+  
+  // Split path and query string
+  const [pathPart, queryPart] = fullPath.split('?');
+  const search = queryPart ? '?' + queryPart : '';
+  
   // normalize trailing slash: treat '/foo/' and '/foo' as the same
   const normalize = (p: string) => { if (!p) return '/'; return p === '/' ? '/' : p.replace(/\/$/, '').replace(/\/$/, ''); };
-  path = normalize(path);
+  const path = normalize(pathPart);
   // Add loading indicator
-  document.body.classList.add('loading');
+  //document.body.classList.add('loading');
   
   try {
-    // Find matching route
+    // Find matching route (match against pathname only, not query string)
     let matchedRoute = null;
     for (const route of routes) {
       if (route.handlerOnly) continue;
@@ -77,6 +82,12 @@ async function navigateToRoute(path: string, pushState = true) {
       }
     }
 
+    // Update browser history BEFORE creating component so window.location is correct when connectedCallback runs
+    if (pushState) {
+      const fullUrl = path + search;
+      window.history.pushState({ path: fullUrl }, '', fullUrl);
+    }
+
     // Use View Transition API if available
     const performTransition = () => {
       if (!matchedRoute.tag) {
@@ -107,11 +118,6 @@ async function navigateToRoute(path: string, pushState = true) {
       }
     } else {
       performTransition();
-    }
-
-    // Update browser history
-    if (pushState) {
-      window.history.pushState({ path }, '', path);
     }
   } finally {
     // Remove loading indicator
@@ -154,14 +160,16 @@ document.addEventListener('click', (e) => {
   if (!href || href.startsWith('http') || href.startsWith('//') || href.startsWith('#')) return;
   
   e.preventDefault();
-  if (href !== window.location.pathname) {
+  // Compare full URL (pathname + search) to handle query string changes
+  const currentUrl = window.location.pathname + window.location.search;
+  if (href !== currentUrl) {
     navigateToRoute(href, true);
   }
 });
 
 // Handle browser back/forward buttons
 window.addEventListener('popstate', (e) => {
-  const raw = e.state?.path || window.location.pathname;
+  const raw = e.state?.path || (window.location.pathname + window.location.search);
   const pathNorm = raw === '/' ? '/' : String(raw).replace(/\/$/, '');
   navigateToRoute(pathNorm, false);
 });

@@ -22,7 +22,11 @@
     color: var(--sfc-text);
   }
 
-  div {
+  /* Only apply default padding to site-specific panel divs, not globally */
+  .panel,
+  .panel > div,
+  nav  div,
+  .wrap > div {
     padding: 1rem;
   }
 

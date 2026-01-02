@@ -4,7 +4,18 @@ import sfcPlugin from './src/plugin';
 export default defineConfig({
   plugins: [sfcPlugin()],
   server: {
-    port: 5173
+    port: 5173,
+    proxy: {
+      // Proxy shop API requests to separate API server
+      '/shop/api': {
+        target: 'http://localhost:5174',
+        changeOrigin: true
+      }
+    }
+  },
+  ssr: {
+    // Externalize native modules for SSR
+    external: ['better-sqlite3']
   },
   build: {
     rollupOptions: {

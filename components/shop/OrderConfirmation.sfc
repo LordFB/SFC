@@ -1,0 +1,350 @@
+<template>
+  <div class="shop-layout">
+    <shop-nav></shop-nav>
+    <main class="order-page">
+      <div class="loading" id="loading">Loading order...</div>
+      
+      <div class="order-success" id="order-success" style="display: none;">
+        <div class="success-icon">✓</div>
+        <h1>Order Confirmed!</h1>
+        <p class="order-number">Order #<span id="order-id"></span></p>
+        <p class="thank-you">Thank you for your purchase! A confirmation email will be sent to <strong id="customer-email"></strong></p>
+        
+        <div class="order-details">
+          <h2>Order Details</h2>
+          <div class="detail-row">
+            <span>Order Date:</span>
+            <span id="order-date"></span>
+          </div>
+          <div class="detail-row">
+            <span>Status:</span>
+            <span id="order-status" class="status-badge"></span>
+          </div>
+          <div class="detail-row">
+            <span>Shipping Address:</span>
+            <span id="shipping-address"></span>
+          </div>
+        </div>
+        
+        <div class="order-items" id="order-items"></div>
+        
+        <div class="order-total">
+          <span>Total Paid:</span>
+          <span id="order-total"></span>
+        </div>
+        
+        <div class="actions">
+          <a href="/shop/orders" class="btn btn-secondary">View All Orders</a>
+          <a href="/shop/products" class="btn btn-primary">Continue Shopping</a>
+        </div>
+      </div>
+      
+      <div class="error-container" id="error-container" style="display: none;">
+        <h2>Order Not Found</h2>
+        <p>We couldn't find this order.</p>
+        <a href="/shop" class="btn btn-primary">Back to Shop</a>
+      </div>
+    </main>
+  </div>
+</template>
+
+<script lang="ts">
+export default class extends HTMLElement {
+  static tag = "shop-order-confirmation";
+  
+  connectedCallback() {
+    // Defer to next microtask to ensure template is attached
+    Promise.resolve().then(() => {
+      const orderId = this.params?.id;
+      if (orderId) {
+        this.loadOrder(orderId);
+      } else {
+        this.showError();
+      }
+    });
+  }
+  
+  async loadOrder(id) {
+    try {
+      const res = await fetch('/shop/api/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'get', orderId: parseInt(id) })
+      });
+      const data = await res.json();
+      
+      if (data.order) {
+        this.renderOrder(data.order);
+      } else {
+        this.showError();
+      }
+    } catch (err) {
+      console.error('[shop-order] Failed to load order:', err);
+      this.showError();
+    }
+  }
+  
+  renderOrder(order) {
+    this.querySelector('#loading').style.display = 'none';
+    this.querySelector('#order-success').style.display = 'block';
+    
+    this.querySelector('#order-id').textContent = order.id;
+    this.querySelector('#customer-email').textContent = order.customer_email;
+    this.querySelector('#order-date').textContent = new Date(order.created_at).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+    
+    const statusEl = this.querySelector('#order-status');
+    statusEl.textContent = order.status.charAt(0).toUpperCase() + order.status.slice(1);
+    statusEl.classList.add(`status-${order.status}`);
+    
+    this.querySelector('#shipping-address').textContent = order.shipping_address;
+    this.querySelector('#order-total').textContent = `$${order.total.toFixed(2)}`;
+    
+    // Render items
+    const itemsContainer = this.querySelector('#order-items');
+    itemsContainer.innerHTML = order.items.map(item => `
+      <div class="item">
+        <img src="${item.image}" alt="${item.name}" />
+        <div class="item-info">
+          <span class="item-name">${item.name}</span>
+          <span class="item-qty">Qty: ${item.quantity} × $${item.price.toFixed(2)}</span>
+        </div>
+        <span class="item-total">$${(item.quantity * item.price).toFixed(2)}</span>
+      </div>
+    `).join('');
+  }
+  
+  showError() {
+    this.querySelector('#loading').style.display = 'none';
+    this.querySelector('#error-container').style.display = 'block';
+  }
+}
+</script>
+
+<style>
+.shop-layout {
+  min-height: 100vh;
+  background: #f8f9fa;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.order-page {
+  max-width: 700px;
+  margin: 0 auto;
+  padding: 32px 20px;
+}
+
+.loading {
+  text-align: center;
+  padding: 64px;
+  color: #666;
+}
+
+.order-success {
+  background: white;
+  border-radius: 16px;
+  padding: 48px 32px;
+  text-align: center;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+}
+
+.success-icon {
+  width: 80px;
+  height: 80px;
+  background: #27ae60;
+  color: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2.5rem;
+  margin: 0 auto 24px;
+}
+
+.order-success h1 {
+  margin: 0 0 8px;
+  color: #333;
+  font-size: 2rem;
+}
+
+.order-number {
+  color: #667eea;
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: 0 0 16px;
+}
+
+.thank-you {
+  color: #666;
+  margin: 0 0 32px;
+  line-height: 1.5;
+}
+
+.order-details {
+  text-align: left;
+  background: #f8f9fa;
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 24px;
+}
+
+.order-details h2 {
+  margin: 0 0 16px;
+  font-size: 1rem;
+  color: #333;
+}
+
+.detail-row {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  font-size: 0.9rem;
+}
+
+.detail-row span:first-child {
+  color: #666;
+}
+
+.detail-row span:last-child {
+  color: #333;
+  font-weight: 500;
+}
+
+.status-badge {
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.status-pending {
+  background: #fff3cd;
+  color: #856404;
+}
+
+.status-completed {
+  background: #d4edda;
+  color: #155724;
+}
+
+.status-shipped {
+  background: #cce5ff;
+  color: #004085;
+}
+
+.order-items {
+  text-align: left;
+  border-top: 1px solid #eee;
+  padding-top: 24px;
+  margin-bottom: 24px;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid #eee;
+}
+
+.item:last-child {
+  border-bottom: none;
+}
+
+.item img {
+  width: 60px;
+  height: 60px;
+  object-fit: cover;
+  border-radius: 8px;
+}
+
+.item-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.item-name {
+  font-weight: 500;
+  color: #333;
+}
+
+.item-qty {
+  font-size: 0.85rem;
+  color: #666;
+}
+
+.item-total {
+  font-weight: 600;
+  color: #333;
+}
+
+.order-total {
+  display: flex;
+  justify-content: space-between;
+  padding: 20px;
+  background: #667eea;
+  color: white;
+  border-radius: 12px;
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin-bottom: 32px;
+}
+
+.actions {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.btn {
+  padding: 14px 28px;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: all 0.2s;
+}
+
+.btn-primary {
+  background: #667eea;
+  color: white;
+}
+
+.btn-primary:hover {
+  background: #5a6fd6;
+}
+
+.btn-secondary {
+  background: #f8f9fa;
+  color: #333;
+}
+
+.btn-secondary:hover {
+  background: #eee;
+}
+
+.error-container {
+  text-align: center;
+  padding: 64px;
+  background: white;
+  border-radius: 16px;
+}
+
+.error-container h2 {
+  margin: 0 0 8px;
+}
+
+.error-container p {
+  color: #666;
+  margin: 0 0 24px;
+}
+</style>
+
+<route path="/shop/order/:id" methods="GET" />

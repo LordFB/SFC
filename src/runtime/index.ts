@@ -194,6 +194,15 @@ export function defineComponent(optsOrCtor: any) {
           } catch (e) {}
         }
         connectedCallback() {
+          // parse route params BEFORE calling super.connectedCallback so user code can access this.params immediately
+          const route = (this.constructor as any).__route;
+          if (route) {
+            const routeParams = parseRouteParams(route.path, window.location.pathname, route.paramNames || []);
+            const queryParams = parseQueryParams(window.location.search);
+            (this as any).routeParams = routeParams;
+            (this as any).queryParams = queryParams;
+            (this as any).params = { ...routeParams, ...queryParams };
+          }
           // call original
           try { if (super.connectedCallback) super.connectedCallback(); } catch (e) { console.error(e); }
           // mountRoot: prefer a created shadow (this.shadow), then native shadowRoot, then the element itself
@@ -268,7 +277,7 @@ export function defineComponent(optsOrCtor: any) {
                         for (const meta of decs) {
                           const type = (meta.type || '').replace(/^on/, '');
                           const args = meta.args || [];
-                          if (type === 'click' || type === 'input' || type === 'change') {
+                          if (type === 'click' || type === 'input' || type === 'change' || type === 'submit') {
                             const selector = args[0] || null;
                             wiringCache.push({ methodName: key, eventType: type, selector });
                             const handler = fn.bind(this);
@@ -313,16 +322,7 @@ export function defineComponent(optsOrCtor: any) {
                   // Cache wiring metadata on constructor for future instances
                   (this.constructor as any).__sfc_wiring_cache = wiringCache;
                 }
-                // parse route params
-                const route = (this.constructor as any).__route;
-                if (route) {
-                  const routeParams = parseRouteParams(route.path, window.location.pathname, route.paramNames || []);
-                  const queryParams = parseQueryParams(window.location.search);
-                  (this as any).routeParams = routeParams;
-                  (this as any).queryParams = queryParams;
-                  (this as any).params = { ...routeParams, ...queryParams };
-                }
-                // interpolate template
+                // interpolate template (params already set before super.connectedCallback)
                 interpolateTemplate(mountRoot, (this as any).params || {});
               } catch (e) { console.error(e); }
             });

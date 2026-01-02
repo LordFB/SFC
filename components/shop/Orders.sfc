@@ -1,0 +1,282 @@
+<template>
+    <div class="shop-layout">
+        <shop-nav></shop-nav>
+        <main class="orders-page">
+            <h1>My Orders</h1>
+
+            <div class="orders-list" id="orders-list">
+                <div class="loading">Loading orders...</div>
+            </div>
+        </main>
+    </div>
+</template>
+
+<script lang="ts">
+    export default class extends HTMLElement {
+        static tag = "shop-orders";
+
+        orders = [];
+
+        connectedCallback() {
+            // Defer to next microtask to ensure template is attached
+            Promise.resolve().then(() => {
+                this.loadOrders();
+            });
+        }
+
+        async loadOrders() {
+            try {
+                const sessionId = this.getSessionId();
+                const res = await fetch('/shop/api/orders', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'list', sessionId })
+                });
+                const data = await res.json();
+                this.orders = data.orders || [];
+                this.render();
+            } catch (err) {
+                console.error('[shop-orders] Failed to load orders:', err);
+                this.querySelector('#orders-list').innerHTML = '<div class="error">Failed to load orders</div>';
+            }
+        }
+
+        render() {
+            const container = this.querySelector('#orders-list');
+
+            if (this.orders.length === 0) {
+                container.innerHTML = `
+        <div class="empty-orders">
+          <div class="empty-icon">📦</div>
+          <h2>No orders yet</h2>
+          <p>When you place orders, they'll appear here.</p>
+          <a href="/shop/products" class="btn btn-primary">Start Shopping</a>
+        </div>
+      `;
+                return;
+            }
+
+            container.innerHTML = this.orders.map(order => `
+      <a href="/shop/order/${order.id}" class="order-card">
+        <div class="order-header">
+          <span class="order-id">Order #${order.id}</span>
+          <span class="status-badge status-${order.status}">${this.formatStatus(order.status)}</span>
+        </div>
+        <div class="order-info">
+          <div class="info-item">
+            <span class="label">Date</span>
+            <span class="value">${this.formatDate(order.created_at)}</span>
+          </div>
+          <div class="info-item">
+            <span class="label">Total</span>
+            <span class="value price">$${order.total.toFixed(2)}</span>
+          </div>
+          <div class="info-item">
+            <span class="label">Ship To</span>
+            <span class="value">${order.customer_name}</span>
+          </div>
+        </div>
+        <div class="order-action">
+          View Details →
+        </div>
+      </a>
+    `).join('');
+        }
+
+        formatStatus(status) {
+            return status.charAt(0).toUpperCase() + status.slice(1);
+        }
+
+        formatDate(dateStr) {
+            return new Date(dateStr).toLocaleDateString('en-US', {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric'
+            });
+        }
+
+        getSessionId() {
+            let sessionId = localStorage.getItem('shop_session');
+            if (!sessionId) {
+                sessionId = 'sess_' + Math.random().toString(36).substr(2, 9) + Date.now();
+                localStorage.setItem('shop_session', sessionId);
+            }
+            return sessionId;
+        }
+    }
+</script>
+
+<style>
+    .shop-layout {
+        min-height: 100vh;
+        background: #f8f9fa;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+
+    .orders-page {
+        width: 100%;
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 32px 20px;
+    }
+
+    .orders-page h1 {
+        margin: 0 0 32px;
+        font-size: 2rem;
+        color: #333;
+    }
+
+    .loading,
+    .error {
+        text-align: center;
+        padding: 48px;
+        color: #666;
+    }
+
+    .error {
+        color: #e74c3c;
+    }
+
+    .empty-orders {
+        text-align: center;
+        padding: 64px;
+        background: white;
+        border-radius: 16px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+    }
+
+    .empty-icon {
+        font-size: 4rem;
+        margin-bottom: 16px;
+        opacity: 0.5;
+    }
+
+    .empty-orders h2 {
+        margin: 0 0 8px;
+        color: #333;
+    }
+
+    .empty-orders p {
+        color: #666;
+        margin: 0 0 24px;
+    }
+
+    .orders-list {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+    }
+
+    .order-card {
+        display: block;
+        background: white;
+        border-radius: 16px;
+        padding: 24px;
+        text-decoration: none;
+        color: inherit;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+        transition: all 0.3s ease;
+    }
+
+    .order-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.12);
+    }
+
+    .order-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 20px;
+    }
+
+    .order-id {
+        font-weight: 700;
+        font-size: 1.1rem;
+        color: #333;
+    }
+
+    .status-badge {
+        padding: 6px 14px;
+        border-radius: 20px;
+        font-size: 0.8rem;
+        font-weight: 600;
+    }
+
+    .status-pending {
+        background: #fff3cd;
+        color: #856404;
+    }
+
+    .status-completed {
+        background: #d4edda;
+        color: #155724;
+    }
+
+    .status-shipped {
+        background: #cce5ff;
+        color: #004085;
+    }
+
+    .order-info {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 16px;
+        margin-bottom: 20px;
+    }
+
+    @media (max-width: 500px) {
+        .order-info {
+            grid-template-columns: 1fr;
+            gap: 12px;
+        }
+    }
+
+    .info-item {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .info-item .label {
+        font-size: 0.8rem;
+        color: #666;
+        margin-bottom: 4px;
+    }
+
+    .info-item .value {
+        font-weight: 500;
+        color: #333;
+    }
+
+    .info-item .value.price {
+        font-size: 1.1rem;
+        color: #667eea;
+    }
+
+    .order-action {
+        color: #667eea;
+        font-weight: 600;
+        font-size: 0.9rem;
+    }
+
+    .btn {
+        display: inline-block;
+        padding: 14px 28px;
+        border-radius: 8px;
+        font-size: 1rem;
+        font-weight: 600;
+        text-decoration: none;
+        transition: all 0.2s;
+    }
+
+    .btn-primary {
+        background: #667eea;
+        color: white;
+    }
+
+    .btn-primary:hover {
+        background: #5a6fd6;
+    }
+</style>
+
+<route path="/shop/orders" methods="GET" />
