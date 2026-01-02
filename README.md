@@ -1,569 +1,256 @@
 # SFC Framework
 
-Vibe coding FTW, A toy frontend framework!! -xoxo-
+A lightweight Vite plugin that transforms Single-File Components (`.sfc`) into native Web Components (Custom Elements). Write clean, declarative components with familiar Vue-like syntax while generating zero-dependency vanilla Custom Elements.
 
-A Vite plugin for building Single-File Components (`.sfc`) that compile to native Web Components (Custom Elements). Write components using familiar Vue-like syntax, but output standards-compliant web components with Shadow DOM support, SCSS compilation, and TypeScript.
+[![Made with Vite](https://img.shields.io/badge/Made%20with-Vite-646CFF?style=flat-square&logo=vite)](https://vitejs.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+
+## Features
+
+- 🚀 **Native Web Components** - Compiles to standard Custom Elements with no runtime framework
+- 📦 **Single-File Components** - `<template>`, `<script>`, `<style>`, and `<route>` blocks in one file
+- 🎨 **Shadow DOM Support** - Optional style encapsulation with `shadow: true`
+- 🔧 **TypeScript Decorators** - `@click`, `@input`, `@change`, `@debounce`, `@throttle`
+- 🛣️ **File-Based Routing** - Automatic route generation from `<route>` blocks
+- ⚡ **Hot Module Replacement** - Full HMR support for templates, styles, and scripts
+- 🎯 **Template Interpolation** - `{{ param }}` syntax with automatic route/query param binding
+- 💅 **SCSS Support** - Built-in Sass preprocessing with `lang="scss"`
+- 🔗 **Auto-Imports** - Automatically imports nested components with dashed tags
+
+## Installation
+
+```bash
+npm install
+```
 
 ## Quick Start
 
 ```bash
-npm install
+# Start development server
 npm run dev
+
+# Run production server
+npm run serve
 ```
 
-Open http://localhost:5173 to see your components in action.
+## Component Syntax
 
-## Writing Components
-
-Create `.sfc` files in your `components/` folder. Each file contains up to four blocks:
-
-### Basic Component
+### Object-Based (Simple)
 
 ```html
 <template>
-  <div class="greeting">
-    <h1>Hello, {{ name }}!</h1>
-    <button class="greet-btn">Click me</button>
+  <div class="example">
+    <h3>Hello World</h3>
+    <p>User ID: {{ id }}</p>
   </div>
 </template>
 
 <script lang="ts">
 export default {
-  tag: 'my-greeting',
+  tag: 'x-example',
   shadow: true,
   connectedCallback() {
-    console.log('Component mounted with params:', this.params);
-  },
-  @click('.greet-btn')
-  greet() {
-    alert('Hello!');
+    console.log('Connected with params:', this.params);
   }
 };
 </script>
 
 <style>
-.greeting {
-  padding: 20px;
-  border: 1px solid #ccc;
+.example {
+  padding: 12px;
+  border: 1px solid #ddd;
 }
 </style>
 
-<route path="/greet/:name" methods="GET" lazy="component" />
+<route path="/example/:id" methods="GET,POST" />
 ```
 
-This component renders at `/greet/world` displaying "Hello, world!" with `this.params.name = 'world'`.
-
-### Class-Based Component with Decorators
+### Class-Based (With Decorators)
 
 ```html
 <template>
-  <input type="text" placeholder="Type something..." />
+  <input class="search-input" type="text" placeholder="Search..." />
   <button class="submit-btn">Submit</button>
 </template>
 
 <script lang="ts">
 export default class extends HTMLElement {
-  static tag = 'my-form';
+  static tag = 'x-search';
 
-  @input('input')
-  onInput(event: Event) {
-    console.log('Input changed:', (event.target as HTMLInputElement).value);
+  @input('.search-input')
+  @debounce(300)
+  onSearch(e) {
+    console.log('Search:', e.target.value);
   }
 
   @click('.submit-btn')
-  onSubmit() {
-    alert('Form submitted!');
+  onSubmit(e) {
+    console.log('Submitted!');
   }
 }
 </script>
 
 <style>
+.search-input {
+  padding: 8px;
+  border: 1px solid #ccc;
+}
 .submit-btn {
-  margin-left: 10px;
-  padding: 5px 10px;
+  padding: 8px 16px;
 }
 </style>
 ```
-
-## Component Options
-
-Choose between object-based and class-based components based on your needs:
-
-### Object-Based Components
-
-Best for simple components with straightforward logic. The framework handles the Custom Element boilerplate for you.
-
-```typescript
-export default {
-  tag: 'my-component',        // Required: custom element tag name (must contain hyphen)
-  shadow: true,               // Optional: enables Shadow DOM for style encapsulation (default: false)
-  observedAttributes: [],     // Optional: array of attribute names to watch for changes
-  connectedCallback() {},     // Optional: called when component is added to DOM
-  disconnectedCallback() {},  // Optional: called when component is removed from DOM
-  attributeChangedCallback(name, oldVal, newVal) {} // Optional: called when observed attributes change
-};
-```
-
-**When to use:** Simple components, rapid prototyping, when you want the framework to manage lifecycle details.
-
-### Class-Based Components
-
-Best for complex components requiring full control over the Custom Element lifecycle or advanced JavaScript features.
-
-```typescript
-export default class extends HTMLElement {
-  static tag = 'my-component'; // Required: custom element tag name
-
-  constructor() {
-    super();
-    // Full control over initialization
-  }
-
-  connectedCallback() {
-    // Component mounted - access to DOM
-  }
-
-  disconnectedCallback() {
-    // Component unmounted - cleanup resources
-  }
-
-  attributeChangedCallback(name, oldVal, newVal) {
-    // React to attribute changes
-  }
-}
-```
-
-**When to use:** Complex state management, inheritance, advanced lifecycle control, or when migrating existing Custom Elements.
-
-**Shadow DOM Considerations:**
-- **Use `shadow: true` when:** You want complete style isolation, building reusable components, or preventing external CSS interference
-- **Avoid `shadow: true` when:** You need global styles to affect the component, or when working with CSS frameworks that rely on global selectors
 
 ## Decorators
 
-Decorators automatically wire event listeners and apply behavior modifiers to class-based component methods. They eliminate manual `addEventListener` calls and provide common behavior patterns.
+| Decorator | Description |
+|-----------|-------------|
+| `@click(selector)` | Binds click event to matching elements |
+| `@input(selector)` | Binds input event to matching elements |
+| `@change(selector)` | Binds change event to matching elements |
+| `@debounce(ms)` | Debounces method execution by specified milliseconds |
+| `@throttle(ms)` | Throttles method to once per specified milliseconds |
 
-### Event Decorators
-
-Automatically attach event listeners to DOM elements:
-
-```typescript
-@click(selector)     // Handles click events
-@input(selector)     // Handles input events (fires on every keystroke)
-@change(selector)    // Handles change events (fires when input loses focus)
-```
-
-- `selector` is optional CSS selector (e.g., `'.btn'`, `'input'`)
-- If omitted, listens on the component's root element
-- Only available in class-based components
-
-**Examples:**
-```typescript
-@click('.submit-btn')  // Listen for clicks on elements with class 'submit-btn'
-@input('input')        // Listen for input changes on all input elements
-@change()              // Listen for changes on the component root
-```
-
-**When to use:** Simplifies event handling, reduces boilerplate, ensures proper cleanup on component destruction.
-
-### Behavior Decorators
-
-Control how often methods are called:
+**Example with timing decorators:**
 
 ```typescript
-@debounce(delay)     // Waits until calls stop before executing (default: 200ms)
-@throttle(delay)     // Limits execution to once per interval (default: 200ms)
-```
-
-**Debounce vs Throttle:**
-- **Use `@debounce`** for search inputs, form validation, or actions that should only happen after user stops interacting
-- **Use `@throttle`** for scroll handlers, resize events, or continuous actions that need regular updates
-
-**Example:**
-```typescript
+@input('.search-box')
 @debounce(300)
-onSearch(event) {
-  // API call - only executes 300ms after user stops typing
+handleSearch(e) {
+  // Only fires 300ms after user stops typing
+  this.performSearch(e.target.value);
 }
 
+@click('.scroll-handler')
 @throttle(100)
-onScroll(event) {
-  // Update UI - executes at most every 100ms during scroll
+handleScroll() {
+  // Fires at most once every 100ms
+  this.updateScrollPosition();
 }
 ```
-
-**When to use:** Performance optimization for frequent events, preventing excessive API calls or DOM updates.
-
-## Styling
-
-Components support both standard CSS and SCSS preprocessing.
-
-### CSS
-
-Basic CSS styling with full browser support:
-
-```html
-<style>
-.my-component {
-  color: red;
-  padding: 10px;
-}
-
-.my-component:hover {
-  opacity: 0.8;
-}
-</style>
-```
-
-**When to use:** Simple styles, maximum browser compatibility, or when you prefer vanilla CSS.
-
-### SCSS Support
-
-Sass/SCSS preprocessing for advanced styling features:
-
-```html
-<style lang="scss">
-$primary-color: #007bff;
-$spacing: 10px;
-
-.my-component {
-  color: $primary-color;
-  padding: $spacing;
-
-  &:hover {
-    color: darken($primary-color, 10%);
-  }
-
-  .nested-element {
-    margin: $spacing * 2;
-  }
-}
-</style>
-```
-
-**SCSS Features Available:**
-- Variables (`$variable`)
-- Nesting (`&` parent selector)
-- Mixins and functions
-- Mathematical operations
-- Partials and imports (if configured)
-
-**When to use SCSS:**
-- Complex component libraries with design systems
-- Need for reusable variables and mixins
-- Advanced nesting for complex component structures
-- Team already using Sass/SCSS
-
-**When to avoid SCSS:**
-- Simple components with minimal styling
-- Performance-critical applications (adds compilation step)
-- Team prefers vanilla CSS or other preprocessors
-
-SCSS is compiled automatically when `lang="scss"` is specified. Requires `sass` package (installed automatically).
-
-## Shadow DOM
-
-Shadow DOM provides complete style and markup encapsulation for components.
-
-### Enabling Shadow DOM
-
-```typescript
-export default {
-  tag: 'my-component',
-  shadow: true,  // Creates isolated DOM subtree
-  // ...
-};
-```
-
-### Benefits of Shadow DOM
-
-**✅ Style Encapsulation:**
-- Component styles don't leak to parent document
-- Parent document styles don't affect component internals
-- No CSS conflicts with global stylesheets
-
-**✅ Markup Isolation:**
-- Component's DOM is completely separate
-- IDs and classes can be reused without conflicts
-- Internal structure is hidden from parent document
-
-**✅ True Component Boundaries:**
-- Perfect for reusable component libraries
-- Prevents accidental styling interference
-- Maintains component integrity across applications
-
-### Drawbacks of Shadow DOM
-
-**❌ Global Style Limitations:**
-- Cannot inherit global CSS custom properties (CSS variables) unless explicitly pierced
-- Difficult to theme components from outside
-- CSS frameworks (Bootstrap, Tailwind) don't work inside Shadow DOM
-
-**❌ Inheritance Issues:**
-- Some CSS properties don't inherit (like `color`, `font-family`)
-- Must explicitly style inherited properties
-- Layout can be affected by inheritance gaps
-
-**❌ Browser Support:**
-- Not supported in IE11 or older browsers
-- Some CSS features work differently in Shadow DOM
-
-### When to Use Shadow DOM
-
-**Use `shadow: true` for:**
-- Reusable component libraries distributed to third parties
-- Components that must maintain visual consistency regardless of host page
-- Enterprise applications with strict style isolation requirements
-- Building design system components
-
-**Avoid `shadow: true` for:**
-- Applications using global CSS frameworks
-- Components that need to inherit parent theming
-- Simple internal components where isolation isn't critical
-- Legacy browser support requirements
 
 ## Routing
 
-Components can declare route metadata for client-side routing. The framework includes a simple router that instantiates components based on the current URL path.
-
-### Route Declaration
+Define routes directly in your component with the `<route>` block:
 
 ```html
-<route path="/dashboard" methods="GET" lazy="component" />
 <route path="/users/:id" methods="GET,POST" lazy="component" />
 ```
 
-**Route Attributes:**
-- `path`: URL pattern (supports `:param` placeholders for route parameters)
-- `methods`: HTTP methods this component handles (currently informational)
-- `lazy`: Loading strategy (currently always "component" - all components are loaded eagerly)
-
-### Parameter Access
-
-Route parameters and query parameters are automatically parsed and made available in components:
+Route parameters are automatically extracted and available via `this.params`:
 
 ```typescript
 connectedCallback() {
-  console.log('Route params:', this.routeParams);    // { id: '123' } for /users/123
-  console.log('Query params:', this.queryParams);    // { foo: 'bar' } for ?foo=bar
-  console.log('All params:', this.params);           // Combined object
+  console.log(this.params.id);  // Route param from /users/:id
 }
 ```
 
-### Template Interpolation
+Access all routes programmatically:
 
-Use `{{ param }}` in templates for automatic parameter substitution:
+```typescript
+import routes from 'virtual:routes';
+// Returns array of route definitions with path, methods, paramNames, etc.
+```
+
+## Template Interpolation
+
+Use `{{ param }}` syntax to interpolate route and query parameters:
 
 ```html
 <template>
-  <div>
-    <h1>Welcome to {{ page }}</h1>
-    <p>User ID: {{ id }}</p>
-    <p>Search: {{ q }}</p>
-  </div>
+  <h1>User Profile</h1>
+  <p>User ID: {{ id }}</p>
+  <p>Tab: {{ tab }}</p>
 </template>
+
+<!-- For URL: /users/123?tab=settings -->
+<!-- Renders: User ID: 123, Tab: settings -->
 ```
 
-For `/users/123?page=dashboard&q=search`, this renders:
-```html
-<div>
-  <h1>Welcome to dashboard</h1>
-  <p>User ID: 123</p>
-  <p>Search: search</p>
-</div>
-```
+## Styling
 
-### Current Implementation
-
-- **Client-Side Routing:** Simple path-based component instantiation
-- **Parameter Parsing:** Automatic extraction of route params (`:param`) and query params
-- **Component Loading:** All components loaded eagerly on app start
-- **No Lazy Loading:** Components are not loaded on-demand yet
-
-### Usage
-
-The router automatically matches the current URL to component routes and instantiates the appropriate component in the document body. Navigate to different paths to see different components render.
-
-**Example:** Visiting `http://localhost:5173/users/123?tab=profile` will render the component with `path="/users/:id"` and make `id`, `tab` available as `this.params.id`, `this.params.tab`.
-
-### Future Plans
-
-- Lazy loading based on routes
-- Nested routing and route guards
-- Server-side route manifest generation
-- History API integration for SPA navigation
-
-## Using Components
-
-Components are automatically registered when the app starts via `import.meta.glob()`. The built-in router instantiates components based on the current URL path.
-
-### Manual Usage
-
-You can also manually instantiate components in HTML or JavaScript:
+### Scoped Styles (Shadow DOM)
 
 ```html
-<!-- index.html -->
-<body>
-  <my-greeting></my-greeting>
-</body>
+<script>
+export default {
+  tag: 'x-component',
+  shadow: true  // Styles are encapsulated
+};
+</script>
+
+<style>
+/* Only affects this component */
+.button { color: blue; }
+</style>
 ```
 
-```javascript
-// Manual instantiation
-const component = document.createElement('my-greeting');
-document.body.appendChild(component);
+### Global Styles
+
+```html
+<style global>
+/* Applied to document, not shadow DOM */
+body { font-family: sans-serif; }
+</style>
 ```
 
-### Router-Based Usage
+### SCSS Support
 
-The router automatically handles component instantiation. Simply navigate to URLs that match component routes:
+```html
+<style lang="scss">
+.container {
+  padding: 1rem;
+  
+  .nested {
+    color: blue;
+    
+    &:hover {
+      color: red;
+    }
+  }
+}
+</style>
+```
 
-- `/greet/world` → renders `<my-greeting>` with `name = 'world'`
-- `/users/123` → renders `<x-user>` with `id = '123'`
-- `?tab=dashboard` → adds `tab = 'dashboard'` to params
+## Architecture
 
-Components are appended to `document.body` when their route matches.
+The framework uses a 3-stage pipeline:
 
-## Development
-
-### Scripts
-
-- `npm run dev` - Start development server with HMR
-- `npm run build` - Build for production
-- `npm run preview` - Preview production build
-
-### Hot Module Replacement (HMR)
-
-Components automatically reload when you edit `.sfc` files. Template and style changes are applied instantly without full page reload.
-
-### Debugging
-
-- Check browser console for component lifecycle logs
-- SFC parsing output is saved to `.sfc-debug/` folder during development
-- Use browser dev tools to inspect Shadow DOM
+1. **Transformer** (`src/transformer.ts`) - Regex extracts blocks → generates JS module via MagicString
+2. **Plugin** (`src/plugin.ts`) - Handles virtual modules, Babel decorator preprocessing, route manifest
+3. **Runtime** (`src/runtime/index.ts`) - `defineComponent()` registers elements, wires decorators, manages styles
 
 ## Project Structure
 
 ```
-├── components/          # Your .sfc component files
+├── components/          # Your .sfc components
+│   ├── Home.sfc
+│   ├── User.sfc
+│   └── shop/           # Nested components
 ├── src/
-│   ├── main.ts         # App entry point with router initialization
-│   ├── plugin.ts       # Vite plugin (internal)
-│   ├── transformer.ts  # SFC parser (internal)
-│   └── runtime/        # Runtime utilities (internal)
-├── index.html          # Main HTML file
-└── package.json
+│   ├── main.ts         # Application entry
+│   ├── plugin.ts       # Vite plugin
+│   ├── transformer.ts  # SFC parser
+│   └── runtime/        # Browser runtime
+├── vite.config.ts
+└── index.html
 ```
+
+## Scripts
+
+| Command | Description |
+|---------|-------------|
+| `npm run dev` | Start dev server with HMR on port 5173 |
+| `npm run build` | Production build to `dist/` |
+| `npm run serve` | Run production server (server.js) |
 
 ## Browser Support
 
-Requires modern browsers with Custom Elements and ES modules support. For Shadow DOM, use evergreen browsers.
-
-## Limitations (MVP)
-
-This is a minimal viable product focused on core SFC-to-Web-Component compilation. Several features common in full frameworks are not yet implemented.
-
-### Current Features
-
-**✅ Template Interpolation**
-- `{{ param }}` syntax automatically replaced with parameter values
-- Works with route params (`:id`) and query params (`?key=value`)
-- No manual DOM manipulation required
-
-**✅ Basic Routing**
-- Client-side routing with path-based component instantiation
-- Automatic parameter parsing and injection
-- Route metadata parsing from `<route>` blocks
-
-**✅ Decorator Support**
-- Event decorators: `@click`, `@input`, `@change`
-- Behavior decorators: `@debounce`, `@throttle`
-- Automatic event listener management and cleanup
-
-### Missing Features
-
-**No Reactive Data Binding**
-- Components don't automatically update when data changes
-- No computed properties or watchers
-- **Workaround:** Use vanilla JavaScript in lifecycle hooks, manually update DOM
-
-**Limited Event Decorators**
-- Only `@click`, `@input`, `@change` available
-- No `@submit`, `@focus`, `@blur`, etc. yet
-- **Workaround:** Use traditional `addEventListener` for other events
-
-**No Lazy Loading**
-- All components loaded eagerly on app start
-- No route-based code splitting
-- **Workaround:** All components are small and loaded upfront
-
-**No Advanced Routing**
-- No nested routes or route guards
-- No history API integration for SPA navigation
-- **Workaround:** Simple path matching for basic routing
-
-**No Build Optimizations**
-- No route manifest generation
-- No automatic CSS optimization
-- **Workaround:** Use Vite's built-in optimizations
-
-### Performance Considerations
-
-- SCSS compilation happens at runtime (development only)
-- No production CSS optimization
-- Components loaded eagerly (not lazy)
-
-### Browser Compatibility
-
-- Requires ES2015+ support
+Works in all modern browsers that support:
 - Custom Elements v1
-- Shadow DOM v1 (optional but recommended)
-- **Not supported:** IE11, older mobile browsers
+- Shadow DOM v1
+- ES2020+
 
-### Development Experience
+## License
 
-- Limited error messages for SFC syntax errors
-- No TypeScript intellisense for component options
-- Basic HMR (template/style only, not script changes)
-
-### Migration Notes
-
-If migrating from Vue/React:
-- No `v-if`, `v-for`, or other directives
-- No reactive `data()` or `props`
-- Must use vanilla DOM manipulation
-- Class-based components similar to custom elements, not framework components
-
-## Contributing
-
-This is an MVP prototype. The framework is designed to be minimal and focused on the core SFC-to-Web-Component transformation pipeline.
-
-### Key Areas for Enhancement
-
-**High Priority:**
-- **Reactive Data Binding:** Add observable properties and automatic DOM updates
-- **More Decorators:** Support for additional events (`@submit`, `@focus`, etc.) and behaviors
-- **Advanced Routing:** Lazy loading, nested routes, route guards, history API integration
-
-**Medium Priority:**
-- **Build Optimizations:** Route manifest generation, CSS minification, tree shaking
-- **Developer Experience:** Better error messages, TypeScript support, testing utilities
-- **Performance:** Production SCSS compilation, CSS-in-JS alternatives
-
-**Low Priority:**
-- **Additional Preprocessors:** Less, Stylus, PostCSS support
-- **Advanced Features:** Slots, component composition, context APIs
-
-### Architecture Notes
-
-- **Virtual Modules:** Script processing uses `?sfc-script` virtual modules to preserve ESM exports
-- **AST Processing:** Babel AST traversal for decorator detection (more reliable than regex)
-- **Runtime Hooks:** HMR updates applied via `defineComponent.__sfc_applyUpdate`
-- **Style Caching:** CSSStyleSheet instances cached by hash for efficient style injection
-
-### Testing
-
-Components are tested manually. Future automated testing could use:
-- Puppeteer for browser integration tests
-- Component mounting utilities
-- Visual regression testing
+MIT
