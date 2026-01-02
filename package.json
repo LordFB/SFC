@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "prismjs": "^1.30.0",
     "puppeteer": "^24.33.0"
   },
   "devDependencies": {
