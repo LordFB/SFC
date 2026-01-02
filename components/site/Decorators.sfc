@@ -17,7 +17,7 @@
           allows decorators to work with both class methods and object-style exports.
         </p>
         <h2>Example Usage</h2>
-        <pre><code>&lt;template&gt;
+        <code-block lang="markup">&lt;template&gt;
     &lt;button class="my-button"&gt;Click Me&lt;/button&gt;
 &lt;/template&gt;
 &lt;script lang="ts"&gt;
@@ -41,7 +41,7 @@ export default class extends HTMLElement {
 .my-button:hover {
     background-color: #0056b3;
 }
-&lt;/style&gt;</code></pre>
+&lt;/style&gt;</code-block>
                 <p>In this example, the <code>@click</code> decorator binds the <code>onButtonClick</code> method to the click event of the button with the class <code>my-button</code>. When the button is clicked, it logs a message to the console.</p>
                 <p>
                     Use <code>@debounce(300)</code> or <code>@throttle(200)</code> above methods to

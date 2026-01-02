@@ -13,12 +13,12 @@
                     segments are supported using <code>/:paramName</code> and are exposed
                     to your component as <code>this.params</code>.
                 </p>
-                <pre><code>&lt;route path="/my-component" methods="GET" lazy="component" /&gt;</code></pre>
-                <pre><code>&lt;route path="/product/:id" methods="GET" /&gt;</code></pre>
+                <code-block lang="markup">&lt;route path="/my-component" methods="GET" lazy="component" /&gt;</code-block>
+                <code-block lang="markup">&lt;route path="/product/:id" methods="GET" /&gt;</code-block>
                 <p>Example access in your component:</p>
-                <pre><code>connectedCallback() {
+                <code-block lang="javascript">connectedCallback() {
     console.log('Route params:', this.params); // e.g. { id: '42' }
-}</code></pre>
+}</code-block>
 
                 <h3>POST Routes &amp; POST Data</h3>
                 <p>
@@ -26,14 +26,14 @@
                     In dev, a <code>postHandler(body, req, res)</code> exported on the
                     component (object export or class method) will be invoked server-side.
                 </p>
-                <pre><code>&lt;route path="/product/add" methods="POST" /&gt;</code></pre>
+                <code-block lang="markup">&lt;route path="/product/add" methods="POST" /&gt;</code-block>
                 <p>
                     When a POST hits your component route, middleware will call
                     your <code>postHandler</code>; the component instance will receive
                     the parsed data on <code>this.postData</code> so you can react to it
                     on the client-side as well.
                 </p>
-                <pre><code>async postHandler(body, req, res) {
+                <code-block lang="javascript">async postHandler(body, req, res) {
     // server-side handler (dev middleware)
     console.log('Received POST body:', body);
     return { status: 200, body: { ok: true } };
@@ -42,8 +42,7 @@
 // client-side example
 connectedCallback() {
     console.log('POST data available via this.postData');
-}
-</code></pre>
+}</code-block>
 
                 <h3>Attribute Handling</h3>
                 <p>
@@ -52,11 +51,10 @@ connectedCallback() {
                     you can observe them with <code>static get observedAttributes()</code>
                     and respond in <code>attributeChangedCallback</code>.
                 </p>
-                <pre><code>static get observedAttributes() { return ['source']; }
+                <code-block lang="javascript">static get observedAttributes() { return ['source']; }
 attributeChangedCallback(name, oldV, newV) {
     console.log('attr', name, 'changed to', newV);
-}
-</code></pre>
+}</code-block>
 
         </div>
 </template>

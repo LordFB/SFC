@@ -22,11 +22,10 @@
             <code>:root</code> in that file) so components can reference design tokens.</p>
 
         <h3>Example: Declaring a global rule</h3>
-        <pre><code>&lt;style global&gt;
+        <code-block lang="css">&lt;style global&gt;
 :root { --sfc-accent: #007bff; }
 nav { background: #eee; }
-&lt;/style&gt;
-</code></pre>
+&lt;/style&gt;</code-block>
 
         <h3>Notes &amp; Best Practices</h3>
         <ul>

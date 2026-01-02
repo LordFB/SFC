@@ -8,7 +8,7 @@
       This example is built with SFC components!
     </p>
         <h3>Quick Start - Create a component</h3>
-        <pre><code>&lt;template&gt;
+        <code-block lang="markup">&lt;template&gt;
     &lt;div class="my-component"&gt;
         &lt;h2&gt;Hello, SFC!&lt;/h2&gt;
         &lt;p&gt;This is my first SFC component.&lt;/p&gt;
@@ -34,7 +34,22 @@ export default {
         color: #666;
     }
 }
-&lt;/style&gt;</code></pre>
+&lt;/style&gt;</code-block>
+    </div>
+    <div class="panel">
+        <h3>Code Block Component</h3>
+        <p>Use the <code>&lt;code-block&gt;</code> component for syntax highlighting. Specify the language with the <code>lang</code> attribute.</p>
+        <code-block lang="markup">
+&lt;template&gt;
+  &lt;div&gt;Hello World&lt;/div&gt;
+&lt;/template&gt;
+&lt;script lang="ts"&gt;
+export default {
+  tag: "hello-world",
+  shadow: true
+}
+&lt;/script&gt;
+        </code-block>
     </div>
     <div class="panel">
         <h3>Routing</h3>
@@ -47,7 +62,7 @@ export default {
         <p>
           Want to learn about the shared styling system used across this demo? See the <a href="/site/global-styles">Global Styles guide</a> for details and examples of using <code>&lt;style global&gt;</code>.
         </p>
-        <pre><code>&lt;route path="/my-component" methods="GET" lazy="component" /&gt;</code></pre>
+        <code-block lang="markup">&lt;route path="/my-component" methods="GET" lazy="component" /&gt;</code-block>
 
         <h3>POST routes</h3>
         <p>
@@ -57,14 +72,14 @@ export default {
           also receive the parsed payload on <code>this.postData</code> so client
           code can react when it's mounted.
         </p>
-        <pre><code>&lt;route path="/product/add" methods="POST" /&gt;</code></pre>
+        <code-block lang="markup">&lt;route path="/product/add" methods="POST" /&gt;</code-block>
 
         <h3>Route Parameters</h3>
-        <pre><code>&lt;route path="/product/:id" methods="GET" /&gt;</code></pre>
+        <code-block lang="markup">&lt;route path="/product/:id" methods="GET" /&gt;</code-block>
         <p>Access dynamic params in your component:</p>
-        <pre><code>connectedCallback() {
+        <code-block lang="javascript">connectedCallback() {
     console.log('Product ID:', this.params.id);
-}</code></pre>
+}</code-block>
 
         <h3>Attributes &amp; Observed Attributes</h3>
         <p>

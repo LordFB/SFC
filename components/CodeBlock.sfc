@@ -1,0 +1,32 @@
+<template>
+  <pre><code></code></pre>
+</template>
+
+<script lang="ts">
+import { attachStyles } from '/src/runtime/index';
+import * as Prism from 'prismjs';
+import prismCss from 'prismjs/themes/prism-dark.css?raw';
+import 'prismjs/components/prism-javascript';
+import 'prismjs/components/prism-typescript';
+import 'prismjs/components/prism-css';
+import 'prismjs/components/prism-scss';
+import 'prismjs/components/prism-markup';
+
+export default {
+  tag: "code-block",
+  shadow: true,
+  connectedCallback() {
+    attachStyles(this.shadowRoot!, prismCss);
+    const codeEl = this.shadowRoot!.querySelector('code')!;
+    const lang = this.getAttribute('lang') || 'javascript';
+    const text = this.textContent!.trim();
+    if (Prism.languages[lang]) {
+      codeEl.className = `language-${lang}`;
+      codeEl.innerHTML = Prism.highlight(text, Prism.languages[lang], lang);
+    } else {
+      codeEl.textContent = text;
+    }
+  }
+};
+</script></content>
+<parameter name="filePath">c:\dev\SFC\components\CodeBlock.sfc
