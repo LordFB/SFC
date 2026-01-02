@@ -1,4 +1,4 @@
-import { Plugin } from 'vite';
+import { Plugin, ViteDevServer } from 'vite';
 import { transformSFC } from './transformer';
 import fs from 'fs';
 import path from 'path';
@@ -9,8 +9,22 @@ import traverse from '@babel/traverse';
 import generate from '@babel/generator';
 import * as t from '@babel/types';
 import ts from 'typescript';
+import { getTransformCache, TransformCache } from './cache';
 
-export default function sfcPlugin(): Plugin {
+export interface SfcPluginOptions {
+  /** Enable production-like optimizations in dev */
+  productionMode?: boolean;
+  /** Pre-compile all SFC files on startup */
+  eagerCompile?: boolean;
+  /** Use persistent disk cache */
+  persistCache?: boolean;
+  /** Pre-compiled routes cache */
+  routesCache?: boolean;
+}
+
+export default function sfcPlugin(options: SfcPluginOptions = {}): Plugin {
+  const { productionMode = false, eagerCompile = false, persistCache = true } = options;
+  const transformCache: TransformCache | null = persistCache ? getTransformCache() : null;
   const virtualModuleId = 'virtual:routes';
   const resolvedVirtualId = '\0' + virtualModuleId;
 
@@ -126,9 +140,48 @@ export default function sfcPlugin(): Plugin {
     // simple in-memory cache: id -> { mtime, code }
     _sfcCache: new Map(),
 
-    configureServer(server) {
-      if (server._sfcMiddlewaresAdded) return;
-      server._sfcMiddlewaresAdded = true;
+    async configureServer(server: ViteDevServer) {
+      if ((server as any)._sfcMiddlewaresAdded) return;
+      (server as any)._sfcMiddlewaresAdded = true;
+
+      // Eager compilation: pre-compile all SFC files on startup for instant subsequent loads
+      if (eagerCompile) {
+        const startTime = Date.now();
+        const componentsDir = path.resolve(process.cwd(), 'components');
+        const sfcFiles: string[] = [];
+        
+        const collectSfcFiles = (dir: string) => {
+          const items = fs.readdirSync(dir);
+          for (const item of items) {
+            const fullPath = path.join(dir, item);
+            const stat = fs.statSync(fullPath);
+            if (stat.isDirectory()) {
+              collectSfcFiles(fullPath);
+            } else if (item.endsWith('.sfc')) {
+              sfcFiles.push(fullPath);
+            }
+          }
+        };
+        
+        try {
+          collectSfcFiles(componentsDir);
+          console.log(`[sfc] Eager compiling ${sfcFiles.length} components...`);
+          
+          // Pre-transform all SFC files in parallel
+          await Promise.all(sfcFiles.map(async (file) => {
+            try {
+              const code = fs.readFileSync(file, 'utf8');
+              await transformSFC(code, file);
+            } catch (e) {
+              // Ignore individual file errors during eager compile
+            }
+          }));
+          
+          console.log(`[sfc] Eager compilation complete in ${Date.now() - startTime}ms`);
+        } catch (e) {
+          console.warn('[sfc] Eager compilation failed:', e);
+        }
+      }
 
       // route manifest cache and mtime
       let routesCache: ReturnType<typeof getRoutes> | null = null;
@@ -607,16 +660,44 @@ export default function sfcPlugin(): Plugin {
 
     async transform(code, id) {
       if (!id.endsWith('.sfc')) return null;
+      
+      // Check persistent disk cache first for near-instant loads
+      if (transformCache) {
+        const cached = transformCache.get(id + '::transform', id);
+        if (cached) {
+          return {
+            code: cached.code,
+            map: cached.map
+          };
+        }
+      }
+      
       // parse and transform into JS module
       const result = await transformSFC(code, id);
-      try {
-        const debugDir = path.resolve(process.cwd(), '.sfc-debug');
-        if (!fs.existsSync(debugDir)) fs.mkdirSync(debugDir);
-        const name = path.basename(id).replace(/[^a-z0-9.-]/gi, '_') + '.js';
-        fs.writeFileSync(path.join(debugDir, name), result.code, 'utf8');
-      } catch (e) {
-        // ignore debug write errors
+      
+      // Store in persistent cache
+      if (transformCache) {
+        transformCache.set(id + '::transform', id, {
+          code: result.code,
+          map: result.map,
+          template: result.template,
+          css: result.css,
+          css_global: result.css_global
+        });
       }
+      
+      // Write debug output only in non-production mode
+      if (!productionMode) {
+        try {
+          const debugDir = path.resolve(process.cwd(), '.sfc-debug');
+          if (!fs.existsSync(debugDir)) fs.mkdirSync(debugDir);
+          const name = path.basename(id).replace(/[^a-z0-9.-]/gi, '_') + '.js';
+          fs.writeFileSync(path.join(debugDir, name), result.code, 'utf8');
+        } catch (e) {
+          // ignore debug write errors
+        }
+      }
+      
       return {
         code: result.code,
         map: result.map
@@ -627,6 +708,12 @@ export default function sfcPlugin(): Plugin {
       const { file, server, modules } = ctx;
       if (!file || !file.endsWith('.sfc')) return null;
       try {
+        // Invalidate persistent cache on file change
+        if (transformCache) {
+          transformCache.invalidate(file + '::transform');
+          transformCache.invalidate(file + '::script');
+        }
+        
         const cache = (this as any)._sfcCache as Map<string, any>;
         const scriptKey = file + '::script';
         if (cache && cache.has(scriptKey)) cache.delete(scriptKey);

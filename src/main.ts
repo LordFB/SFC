@@ -18,6 +18,8 @@ let currentRouteElement: HTMLElement | null = null;
 // Preload cache for hover intent
 const preloadCache = new Set<string>();
 
+localStorage.setItem('sfc-disable-transitions', 'false');
+
 // SPA Router with navigation events
 async function navigateToRoute(path: string, pushState = true) {
   console.log('[router] navigating to:', path);
@@ -76,32 +78,35 @@ async function navigateToRoute(path: string, pushState = true) {
     }
 
     // Use View Transition API if available
-    const performTransition = async () => {
-      // Create and mount new component first to avoid a blank gap
+    const performTransition = () => {
       if (!matchedRoute.tag) {
         console.error('[router] matched route has no tag:', matchedRoute);
         return;
       }
-      const el = document.createElement(matchedRoute.tag);
-      document.body.appendChild(el);
+      // Remove old element first to prevent flash from double-rendering
       const previous = currentRouteElement;
-      currentRouteElement = el;
-
-      // Remove old component after the new one is in place
       if (previous) {
         try { previous.remove(); } catch (e) { console.warn(e); }
       }
+      // Then create and mount new component
+      const el = document.createElement(matchedRoute.tag);
+      document.body.appendChild(el);
+      currentRouteElement = el;
     };
 
-    if ((document as any).startViewTransition && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    // Check if transitions are disabled via localStorage or prefers-reduced-motion
+    const transitionsDisabled = localStorage.getItem('sfc-disable-transitions') === 'true' 
+      || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    if ((document as any).startViewTransition && !transitionsDisabled) {
       try {
         await (document as any).startViewTransition(performTransition).finished;
       } catch (e) {
         // Fallback if transition fails
-        await performTransition();
+        performTransition();
       }
     } else {
-      await performTransition();
+      performTransition();
     }
 
     // Update browser history

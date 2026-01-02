@@ -2,12 +2,32 @@ import MagicString from 'magic-string';
 import fs from 'fs';
 import path from 'path';
 
+// Pre-compiled regex patterns for performance (compile once, reuse many times)
+const TEMPLATE_RE = /<template[^>]*>([\s\S]*?)<\/template>/i;
+const SCRIPT_RE = /<script[^>]*>([\s\S]*?)<\/script>/i;
+const STYLE_RE = /<style([^>]*)>([\s\S]*?)<\/style>/i;
+const ROUTE_RE = /<route([^>]*)>([\s\S]*?)<\/route>/i;
+const ROUTE_SELF_CLOSE_RE = /<route([^>]*)\s*\/?>/i;
+const ATTR_RE = /([a-zA-Z0-9-:]+)\s*=\s*"([^"]*)"/g;
+const PARAM_RE = /:([a-zA-Z_][a-zA-Z0-9_]*)/g;
+const TAG_RE = /(?:static\s+)?tag\s*[=:]\s*['"`]([^'"`]+)['"`]/;
+const DASHED_TAG_RE = /<([a-z][a-z0-9-]*)[\s/>]/gi;
+const STYLE_GLOBAL_RE = /<style([^>]*)>([\s\S]*?)<\/style>/gi;
+const LANG_RE = /lang\s*=\s*(?:"([^"]+)"|'([^']+)'|([^\s>]+))/i;
+const GLOBAL_ATTR_RE = /\bglobal(?:\s*=\s*(?:"true"|'true'|true))?\b/i;
+const EXPORT_DEFAULT_CLASS_RE = /export\s+default\s+class/;
+const METHOD_DECORATOR_RE = /@([A-Za-z_$][\w$]*)\s*(?:\s*\(\s*(?:(['\"])([^\2]*?)\2\s*)?\)\s*)?\s*([A-Za-z_$][\w$]*)\s*\(/g;
+
+// Memoization caches
+const tagScanCache = new Map<string, Record<string, string>>();
+const sassModule: { compile?: typeof import('sass').compileString } = {};
+
 export async function transformSFC(code: string, id: string) {
   // Simple regex extraction for <template>, <script>, <style>, and <route>
-  const templateMatch = code.match(/<template[^>]*>([\s\S]*?)<\/template>/i);
-  const scriptMatch = code.match(/<script[^>]*>([\s\S]*?)<\/script>/i);
-  const styleMatch = code.match(/<style([^>]*)>([\s\S]*?)<\/style>/i);
-  const routeMatch = code.match(/<route([^>]*)>([\s\S]*?)<\/route>/i) || code.match(/<route([^>]*)\s*\/?>/i);
+  const templateMatch = code.match(TEMPLATE_RE);
+  const scriptMatch = code.match(SCRIPT_RE);
+  const styleMatch = code.match(STYLE_RE);
+  const routeMatch = code.match(ROUTE_RE) || code.match(ROUTE_SELF_CLOSE_RE);
 
   const template = templateMatch ? templateMatch[1].trim() : '';
   const script = scriptMatch ? scriptMatch[1].trim() : '';
@@ -17,14 +37,18 @@ export async function transformSFC(code: string, id: string) {
   if (routeMatch) {
     const attrString = routeMatch[1] || '';
     const attrs: Record<string,string> = {};
-    for (const m of attrString.matchAll(/([a-zA-Z0-9-:]+)\s*=\s*"([^"]*)"/g)) {
-      attrs[m[1]] = m[2];
+    // Use pre-compiled regex with reset
+    ATTR_RE.lastIndex = 0;
+    let attrMatch: RegExpExecArray | null;
+    while ((attrMatch = ATTR_RE.exec(attrString)) !== null) {
+      attrs[attrMatch[1]] = attrMatch[2];
     }
     const content = routeMatch[2] || '';
     const paramNames: string[] = [];
-    const path = attrs.path;
-    if (path) {
-      const matches = path.match(/:([a-zA-Z_][a-zA-Z0-9_]*)/g);
+    const routePath = attrs.path;
+    if (routePath) {
+      // Use pre-compiled regex
+      const matches = routePath.match(PARAM_RE);
       if (matches) {
         paramNames.push(...matches.map(m => m.slice(1)));
       }
@@ -38,7 +62,7 @@ export async function transformSFC(code: string, id: string) {
     } else {
       // try to infer tag from script if not provided; mark handlerOnly when absent
       if (!attrs.tag) {
-        const scriptTagMatch = script.match(/(?:static\s+)?tag\s*[=:]\s*['"`]([^'"`]+)['"`]/);
+        const scriptTagMatch = script.match(TAG_RE);
         if (scriptTagMatch) {
           attrs.tag = scriptTagMatch[1];
         } else {
@@ -57,10 +81,11 @@ export async function transformSFC(code: string, id: string) {
   // for corresponding .sfc files under the project's components/ directory so nested
   // components are registered when the parent module executes.
   try {
-    const tagRe = /<([a-z][a-z0-9-]*)[\s/>]/gi;
+    // Reset the global regex before use
+    DASHED_TAG_RE.lastIndex = 0;
     const found = new Set<string>();
     let m: RegExpExecArray | null;
-    while ((m = tagRe.exec(template))) {
+    while ((m = DASHED_TAG_RE.exec(template))) {
       const name = m[1];
       if (name.includes('-')) found.add(name);
     }
@@ -150,25 +175,30 @@ export async function transformSFC(code: string, id: string) {
     if (scriptMatch && scriptMatch[0]) scanSource = scanSource.replace(scriptMatch[0], '');
   } catch (e) {}
 
-  const styleRe = /<style([^>]*)>([\s\S]*?)<\/style>/gi;
+  // Reset global regex before use
+  STYLE_GLOBAL_RE.lastIndex = 0;
   let m: RegExpExecArray | null;
   const localParts: string[] = [];
   const globalParts: string[] = [];
-  while ((m = styleRe.exec(scanSource)) !== null) {
+  while ((m = STYLE_GLOBAL_RE.exec(scanSource)) !== null) {
     const attrs = m[1] || '';
     const content = (m[2] || '').trim();
     if (!content) continue;
-    // detect lang and global attributes
+    // detect lang and global attributes using pre-compiled regex
     let lang = null as string | null;
-    const lm = attrs.match(/lang\s*=\s*(?:"([^"]+)"|'([^']+)'|([^\s>]+))/i);
+    const lm = attrs.match(LANG_RE);
     if (lm) lang = lm[1] || lm[2] || lm[3] || null;
-    const globalAttr = /\bglobal(?:\s*=\s*(?:"true"|'true'|true))?\b/i.test(attrs);
+    const globalAttr = GLOBAL_ATTR_RE.test(attrs);
 
     let compiled = content;
     if (lang && lang.toLowerCase() === 'scss' && content) {
       try {
-        const sass = await import('sass');
-        const out = sass.compileString(content, { style: 'expanded' });
+        // Lazy-load and cache sass module for performance
+        if (!sassModule.compile) {
+          const sass = await import('sass');
+          sassModule.compile = sass.compileString;
+        }
+        const out = sassModule.compile(content, { style: 'expanded' });
         compiled = out.css;
       } catch (e) {
         compiled = content;
