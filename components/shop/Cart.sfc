@@ -270,10 +270,13 @@ export default class extends HTMLElement {
   width: 32px;
   height: 32px;
   border: 1px solid #ddd;
-  background: #f8f9fa;
+  background: rgb(102, 126, 234);
   font-size: 1rem;
   cursor: pointer;
   transition: all 0.2s;
+  display:flex;
+  align-items:center;
+  justify-content:center;
 }
 
 .qty-minus {
@@ -320,6 +323,9 @@ export default class extends HTMLElement {
   font-size: 1.25rem;
   cursor: pointer;
   transition: all 0.2s;
+  display:flex;
+  align-items:center;
+  justify-content:center;
 }
 
 .remove-btn:hover {

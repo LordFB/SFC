@@ -279,13 +279,13 @@ export default class extends HTMLElement {
 .product-gallery {
   border-radius: 12px;
   overflow: hidden;
-  background: #f0f0f0;
 }
 
 .product-gallery img {
   width: 100%;
   height: auto;
   display: block;
+  border-radius:12px;
 }
 
 .product-info {
@@ -355,16 +355,22 @@ export default class extends HTMLElement {
   align-items: center;
   gap: 0;
   width: fit-content;
+  border:0;
 }
 
 .qty-btn {
   width: 40px;
   height: 40px;
   border: 1px solid #ddd;
-  background: #f8f9fa;
+  background: rgb(102, 126, 234);
   font-size: 1.25rem;
   cursor: pointer;
   transition: all 0.2s;
+  line-height:40px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  border-color: #667eea;
 }
 
 .qty-minus {
@@ -384,9 +390,7 @@ export default class extends HTMLElement {
 #quantity {
   width: 60px;
   height: 40px;
-  border: 1px solid #ddd;
-  border-left: none;
-  border-right: none;
+  border: 0;
   text-align: center;
   font-size: 1rem;
   -moz-appearance: textfield;
