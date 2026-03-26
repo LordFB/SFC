@@ -11,6 +11,10 @@ export default defineConfig({
         target: 'http://localhost:5174',
         changeOrigin: true
       }
+    },
+    watch: {
+      // Ignore generated dirs to prevent spurious reloads
+      ignored: ['**/node_modules/**', '**/.git/**', '**/.sfc-cache/**', '**/.sfc-debug/**']
     }
   },
   ssr: {

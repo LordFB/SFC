@@ -8,9 +8,10 @@
     "dev:shop": "node shop-api-server.js",
     "dev:prod": "cross-env PROD_DEV=true vite --host --config vite.config.prod.ts",
     "dev:fast": "vite --host --force",
-    "build": "vite build",
+    "build": "vite build --config vite.config.build.ts",
     "preview": "vite preview",
-    "serve": "node server.js"
+    "serve": "node server.js",
+    "start": "node server.prod.js"
   },
   "dependencies": {
     "better-sqlite3": "^12.5.0",

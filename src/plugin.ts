@@ -1,5 +1,5 @@
 import { Plugin, ViteDevServer } from 'vite';
-import { transformSFC } from './transformer';
+import { transformSFC, invalidateTagMapCache } from './transformer';
 import fs from 'fs';
 import path from 'path';
 import { debounce } from './utils/debounce';
@@ -119,22 +119,21 @@ export default function sfcPlugin(options: SfcPluginOptions = {}): Plugin {
     name: 'vite-plugin-sfc',
     enforce: 'pre',
 
-    // Try to guide Vite/Rollup to produce a single JS bundle by inlining dynamic imports
-    // and preventing manual chunking where possible. This is a best-effort change; the
-    // build may still split depending on user config and dependencies.
-    config() {
-      return {
-        build: {
-          rollupOptions: {
-            // allow Rollup to inline dynamic imports where safe
-            inlineDynamicImports: true,
-            output: {
-              // unset manualChunks to reduce split-chunk heuristics
-              manualChunks: undefined
+    // For production builds, prevent Rollup conflicts but don't force
+    // inlineDynamicImports which may not be supported by all Rollup versions.
+    config(_cfg, { command }) {
+      if (command === 'build') {
+        return {
+          build: {
+            rollupOptions: {
+              output: {
+                // unset manualChunks to reduce split-chunk heuristics
+                manualChunks: undefined
+              }
             }
           }
-        }
-      };
+        };
+      }
     },
 
     // simple in-memory cache: id -> { mtime, code }
@@ -198,17 +197,25 @@ export default function sfcPlugin(options: SfcPluginOptions = {}): Plugin {
       buildRoutesCache();
 
       // debounced invalidation to reduce thrash
+      const componentsDir = path.resolve(process.cwd(), 'components');
       const invalidate = debounce(async () => {
         await buildRoutesCache();
         try { server.ws.send({ type: 'full-reload' }); } catch (e) {}
       }, 120);
 
-      // ensure watcher watches components dir
+      // Filter watcher events to only .sfc files within the components directory.
+      // Previously, events for ALL watched files (including .sfc-debug, .sfc-cache,
+      // etc.) triggered a full-reload, causing the page to reload on first visit.
+      const isSfcInComponents = (filePath: string) => {
+        const normalized = path.resolve(filePath);
+        return normalized.startsWith(componentsDir) && normalized.endsWith('.sfc');
+      };
+
       try {
-        server.watcher.add(path.resolve(process.cwd(), 'components'));
-        server.watcher.on('add', invalidate);
-        server.watcher.on('change', invalidate);
-        server.watcher.on('unlink', invalidate);
+        server.watcher.add(componentsDir);
+        server.watcher.on('add', (f: string) => { if (isSfcInComponents(f)) { invalidateTagMapCache(); invalidate(); } });
+        server.watcher.on('change', (f: string) => { if (isSfcInComponents(f)) { invalidateTagMapCache(); invalidate(); } });
+        server.watcher.on('unlink', (f: string) => { if (isSfcInComponents(f)) { invalidateTagMapCache(); invalidate(); } });
       } catch (e) {
         // watcher may not be available in some contexts
       }
@@ -603,14 +610,6 @@ export default function sfcPlugin(options: SfcPluginOptions = {}): Plugin {
             // ignore injection errors
           }
           cache.set(cacheKey, { mtime, code: finalCode });
-          try {
-            const debugDir = path.resolve(process.cwd(), '.sfc-debug');
-            if (!fs.existsSync(debugDir)) fs.mkdirSync(debugDir);
-            const name = path.basename(file).replace(/[^a-z0-9.-]/gi, '_') + '.script.js';
-            fs.writeFileSync(path.join(debugDir, name), finalCode, 'utf8');
-          } catch (e) {
-            // ignore debug write errors
-          }
           return finalCode;
         } catch (e) {
           // If esbuild failed, try using TypeScript's transpileModule to strip types
@@ -642,12 +641,6 @@ export default function sfcPlugin(options: SfcPluginOptions = {}): Plugin {
 
             const cacheKey = real + '::script';
             try { const cache = (this as any)._sfcCache; const stat = fs.statSync(file); cache.set(cacheKey, { mtime: stat.mtimeMs, code: finalCode }); } catch (ee) {}
-            try {
-              const debugDir = path.resolve(process.cwd(), '.sfc-debug');
-              if (!fs.existsSync(debugDir)) fs.mkdirSync(debugDir);
-              const name = path.basename(file).replace(/[^a-z0-9.-]/gi, '_') + '.script.js';
-              fs.writeFileSync(path.join(debugDir, name), finalCode, 'utf8');
-            } catch (ee) {}
             return finalCode;
           } catch (ee) {
             // As a last resort, return a stripped version without decorator tokens
@@ -686,17 +679,9 @@ export default function sfcPlugin(options: SfcPluginOptions = {}): Plugin {
         });
       }
       
-      // Write debug output only in non-production mode
-      if (!productionMode) {
-        try {
-          const debugDir = path.resolve(process.cwd(), '.sfc-debug');
-          if (!fs.existsSync(debugDir)) fs.mkdirSync(debugDir);
-          const name = path.basename(id).replace(/[^a-z0-9.-]/gi, '_') + '.js';
-          fs.writeFileSync(path.join(debugDir, name), result.code, 'utf8');
-        } catch (e) {
-          // ignore debug write errors
-        }
-      }
+      // Debug output writing removed - it triggered the file watcher and caused
+      // spurious full-reloads on first page visit. Use the .sfc-cache on disk or
+      // browser DevTools Sources to inspect transformed output instead.
       
       return {
         code: result.code,
@@ -787,6 +772,8 @@ export default function sfcPlugin(options: SfcPluginOptions = {}): Plugin {
                 // emit a small redirect HTML file at the route path
                 const destParts = (String(r.path || '/')).split('/').filter(Boolean).map(p => p.startsWith(':') ? `[${p.slice(1)}]` : p);
                 const filePath = destParts.length ? path.posix.join(...destParts, 'index.html') : 'index.html';
+                // Skip root index.html — Vite already emits it
+                if (filePath === 'index.html') continue;
                 const redirectTo = r.redirect || '/';
                 const html = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=${redirectTo}"></head><body></body></html>`;
                 this.emitFile({ type: 'asset', fileName: filePath, source: html });
@@ -800,6 +787,9 @@ export default function sfcPlugin(options: SfcPluginOptions = {}): Plugin {
 
               const destParts = (String(r.path || '/')).split('/').filter(Boolean).map(p => p.startsWith(':') ? `[${p.slice(1)}]` : p);
               const filePath = destParts.length ? path.posix.join(...destParts, 'index.html') : 'index.html';
+
+              // Skip root index.html — Vite already emits it from the source HTML entry
+              if (filePath === 'index.html') continue;
 
               const tag = r.tag || (r.component ? (() => {
                 // try to infer tag from component filename: components/FooBar.sfc -> foo-bar

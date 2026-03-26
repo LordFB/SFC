@@ -1,0 +1,233 @@
+/**
+ * Production server — standalone Express app that serves the built frontend
+ * and handles shop API + SFC POST routes.
+ *
+ * Usage:
+ *   npm run build        # build frontend into dist/public/
+ *   npm run start        # start this server
+ *
+ * Environment variables:
+ *   PORT          — HTTP port (default 3000)
+ *   NODE_ENV      — set to 'production' automatically by the start script
+ */
+
+import http from 'http';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import zlib from 'zlib';
+import { createHash } from 'crypto';
+import { shopDb } from './shop-db.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const PORT = parseInt(process.env.PORT || '3000', 10);
+const STATIC_DIR = path.join(__dirname, 'dist', 'public');
+
+// ─── MIME types ──────────────────────────────────────────────────────
+const MIME = {
+  '.html': 'text/html; charset=utf-8',
+  '.js':   'text/javascript; charset=utf-8',
+  '.mjs':  'text/javascript; charset=utf-8',
+  '.css':  'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.png':  'image/png',
+  '.jpg':  'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif':  'image/gif',
+  '.svg':  'image/svg+xml',
+  '.ico':  'image/x-icon',
+  '.woff': 'font/woff',
+  '.woff2':'font/woff2',
+  '.ttf':  'font/ttf',
+};
+
+// ─── helpers ─────────────────────────────────────────────────────────
+function etag(buf) {
+  return createHash('md5').update(buf).digest('hex');
+}
+
+function compress(buf, acceptEncoding) {
+  if (!acceptEncoding) return { content: buf, encoding: null };
+  if (acceptEncoding.includes('br')) {
+    return { content: zlib.brotliCompressSync(buf, { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 4 } }), encoding: 'br' };
+  }
+  if (acceptEncoding.includes('gzip')) {
+    return { content: zlib.gzipSync(buf, { level: 6 }), encoding: 'gzip' };
+  }
+  return { content: buf, encoding: null };
+}
+
+function parseBody(req) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    req.on('data', c => chunks.push(c));
+    req.on('end', () => {
+      const raw = Buffer.concat(chunks).toString();
+      try { resolve(raw ? JSON.parse(raw) : {}); }
+      catch { reject(new Error('Invalid JSON')); }
+    });
+    req.on('error', reject);
+  });
+}
+
+// ─── shop API handler (identical logic to shop-api-server.js) ────────
+async function handleShopApi(urlPath, body) {
+  try {
+    if (urlPath === '/shop/api/products') {
+      switch (body.action) {
+        case 'list':     return { s: 200, d: { products: shopDb.getAllProducts(), categories: shopDb.getCategories() } };
+        case 'get':      return { s: 200, d: { product: shopDb.getProductById(body.id) } };
+        case 'search':   return { s: 200, d: { products: shopDb.searchProducts(body.term || '') } };
+        case 'category': return { s: 200, d: { products: shopDb.getProductsByCategory(body.category) } };
+        default:         return { s: 400, d: { error: 'Invalid action' } };
+      }
+    }
+    if (urlPath === '/shop/api/cart') {
+      const { action, sessionId } = body;
+      if (!sessionId) return { s: 400, d: { error: 'Session ID required' } };
+      switch (action) {
+        case 'get':    return { s: 200, d: shopDb.getCart(sessionId) };
+        case 'add':    if (!body.productId) return { s: 400, d: { error: 'Product ID required' } };
+                       return { s: 200, d: shopDb.addToCart(sessionId, body.productId, body.quantity || 1) };
+        case 'update': if (!body.productId) return { s: 400, d: { error: 'Product ID required' } };
+                       return { s: 200, d: shopDb.updateCartQuantity(sessionId, body.productId, body.quantity) };
+        case 'remove': if (!body.productId) return { s: 400, d: { error: 'Product ID required' } };
+                       return { s: 200, d: shopDb.removeFromCart(sessionId, body.productId) };
+        case 'clear':  return { s: 200, d: shopDb.clearCart(sessionId) };
+        default:       return { s: 400, d: { error: 'Invalid action' } };
+      }
+    }
+    if (urlPath === '/shop/api/orders') {
+      const { action, sessionId } = body;
+      switch (action) {
+        case 'create': {
+          if (!sessionId || !body.customerInfo) return { s: 400, d: { error: 'Session ID and customer info required' } };
+          const { name, email, address } = body.customerInfo;
+          if (!name || !email || !address) return { s: 400, d: { error: 'Name, email, and address are required' } };
+          return { s: 200, d: { order: shopDb.createOrder(sessionId, body.customerInfo) } };
+        }
+        case 'get':  if (!body.orderId) return { s: 400, d: { error: 'Order ID required' } };
+                     return { s: 200, d: { order: shopDb.getOrderById(body.orderId) } };
+        case 'list': if (!sessionId) return { s: 400, d: { error: 'Session ID required' } };
+                     return { s: 200, d: { orders: shopDb.getOrdersBySession(sessionId) } };
+        default:     return { s: 400, d: { error: 'Invalid action' } };
+      }
+    }
+    return { s: 404, d: { error: 'Not found' } };
+  } catch (err) {
+    console.error('[shop-api]', err);
+    return { s: 500, d: { error: err.message } };
+  }
+}
+
+// ─── Static file cache (in memory) ──────────────────────────────────
+const fileCache = new Map();
+
+function serveStatic(filePath, req, res) {
+  let entry = fileCache.get(filePath);
+  if (!entry) {
+    if (!fs.existsSync(filePath)) return false;
+    const stat = fs.statSync(filePath);
+    if (stat.isDirectory()) return false;
+    const buf = fs.readFileSync(filePath);
+    entry = { buf, etag: etag(buf) };
+    fileCache.set(filePath, entry);
+  }
+  if (req.headers['if-none-match'] === entry.etag) {
+    res.writeHead(304);
+    res.end();
+    return true;
+  }
+  const ext = path.extname(filePath);
+  const mime = MIME[ext] || 'application/octet-stream';
+  const isHashed = /[-\.][a-zA-Z0-9]{6,}\.(js|css)$/.test(filePath);
+  const cacheControl = isHashed ? 'public, max-age=31536000, immutable' : 'public, max-age=0, must-revalidate';
+  const ae = req.headers['accept-encoding'] || '';
+  const { content, encoding } = compress(entry.buf, ae);
+  const headers = { 'Content-Type': mime, 'ETag': entry.etag, 'Cache-Control': cacheControl };
+  if (encoding) headers['Content-Encoding'] = encoding;
+  res.writeHead(200, headers);
+  res.end(content);
+  return true;
+}
+
+// ─── index.html fallback (SPA) ──────────────────────────────────────
+let indexHtml = null;
+function getIndex() {
+  if (indexHtml) return indexHtml;
+  const p = path.join(STATIC_DIR, 'index.html');
+  if (fs.existsSync(p)) indexHtml = fs.readFileSync(p);
+  return indexHtml;
+}
+
+// ─── main request handler ────────────────────────────────────────────
+async function handle(req, res) {
+  const url = new URL(req.url, `http://localhost:${PORT}`);
+  const urlPath = url.pathname;
+
+  // CORS preflight
+  if (req.method === 'OPTIONS' && urlPath.startsWith('/shop/api/')) {
+    res.writeHead(204, {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type'
+    });
+    res.end();
+    return;
+  }
+
+  // Shop API
+  if (urlPath.startsWith('/shop/api/') && req.method === 'POST') {
+    try {
+      const body = await parseBody(req);
+      const { s, d } = await handleShopApi(urlPath, body);
+      res.writeHead(s, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(d));
+    } catch (err) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Bad request' }));
+    }
+    return;
+  }
+
+  // Static file
+  const safePath = path.normalize(urlPath).replace(/^(\.\.[/\\])+/, '');
+  const filePath = path.join(STATIC_DIR, safePath === '/' ? 'index.html' : safePath);
+
+  if (serveStatic(filePath, req, res)) return;
+
+  // SPA fallback — serve index.html for any unmatched GET
+  if (req.method === 'GET') {
+    const idx = getIndex();
+    if (idx) {
+      const ae = req.headers['accept-encoding'] || '';
+      const { content, encoding } = compress(idx, ae);
+      const headers = { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' };
+      if (encoding) headers['Content-Encoding'] = encoding;
+      res.writeHead(200, headers);
+      res.end(content);
+      return;
+    }
+  }
+
+  res.writeHead(404, { 'Content-Type': 'text/plain' });
+  res.end('Not Found');
+}
+
+// ─── start ───────────────────────────────────────────────────────────
+if (!fs.existsSync(STATIC_DIR)) {
+  console.error(`\n  Build output not found at ${STATIC_DIR}\n  Run "npm run build" first.\n`);
+  process.exit(1);
+}
+
+const server = http.createServer({ keepAlive: true, keepAliveTimeout: 5000 }, handle);
+server.listen(PORT, () => {
+  console.log(`
+  SFC Production Server
+  ─────────────────────
+  http://localhost:${PORT}
+  Serving from: ${STATIC_DIR}
+`);
+});
+
+process.on('SIGINT', () => { server.close(() => process.exit(0)); });

@@ -22,6 +22,54 @@ const METHOD_DECORATOR_RE = /@([A-Za-z_$][\w$]*)\s*(?:\s*\(\s*(?:(['\"])([^\2]*?
 const tagScanCache = new Map<string, Record<string, string>>();
 const sassModule: { compile?: typeof import('sass').compileString } = {};
 
+// Cached tag-to-filepath map for component auto-import resolution.
+// Rebuilt at most once per second to avoid rescanning the filesystem on every transform.
+let _tagMapCache: Record<string, string> | null = null;
+let _tagMapCacheTime = 0;
+const TAG_MAP_TTL = 1000; // 1 second
+
+function getTagToPathMap(): Record<string, string> {
+  const now = Date.now();
+  if (_tagMapCache && now - _tagMapCacheTime < TAG_MAP_TTL) return _tagMapCache;
+  const componentsDir = path.resolve(process.cwd(), 'components');
+  const map: Record<string, string> = {};
+
+  function scan(dir: string) {
+    let list: string[];
+    try { list = fs.readdirSync(dir); } catch { return; }
+    for (const file of list) {
+      const full = path.join(dir, file);
+      let st: fs.Stats;
+      try { st = fs.statSync(full); } catch { continue; }
+      if (st.isDirectory()) { scan(full); continue; }
+      if (!file.endsWith('.sfc')) continue;
+      const content = fs.readFileSync(full, 'utf8');
+      const scriptMatch = content.match(/<script[\s\S]*?>([\s\S]*?)<\/script>/i);
+      const script = scriptMatch ? scriptMatch[1] : '';
+      const tagMatch = script.match(/(?:static\s+)?tag\s*[=:]\s*['"`]([^'"`]+)['"`]/);
+      if (tagMatch) map[tagMatch[1]] = full;
+      // heuristic: site-nav -> components/site/Nav.sfc
+      const base = path.basename(file, '.sfc');
+      const rel = path.relative(componentsDir, full).replace(/\\/g, '/');
+      const parts = rel.replace('.sfc', '').split('/');
+      if (parts.length >= 2) {
+        const dashed = parts.map(p => p.toLowerCase()).join('-');
+        if (!map[dashed]) map[dashed] = full;
+      }
+      // filename-only fallback (lowercase)
+      if (!map[base.toLowerCase()]) map[base.toLowerCase()] = full;
+    }
+  }
+
+  try { scan(componentsDir); } catch {}
+  _tagMapCache = map;
+  _tagMapCacheTime = now;
+  return map;
+}
+
+/** Invalidate the cached tag map (call when .sfc files are added/removed). */
+export function invalidateTagMapCache() { _tagMapCache = null; }
+
 export async function transformSFC(code: string, id: string) {
   // Simple regex extraction for <template>, <script>, <style>, and <route>
   const templateMatch = code.match(TEMPLATE_RE);
@@ -73,6 +121,19 @@ export async function transformSFC(code: string, id: string) {
     route = { attrs, content, paramNames };
   }
 
+  // Handler-only components (no template, no tag) are server-side-only.
+  // Emit a lightweight no-op module so the client build never pulls in
+  // server dependencies like better-sqlite3.
+  if (route && route.attrs.handlerOnly === 'true' && !template) {
+    const routeData = { ...route.attrs, paramNames: route.paramNames };
+    const noop = [
+      `export const __route = ${JSON.stringify(routeData)};`,
+      `export default {};`
+    ].join('\n');
+    const noopMs = new MagicString(noop);
+    return { code: noop, map: noopMs.generateMap({ hires: true }), css: null, css_global: null, template: '' };
+  }
+
   // assemble a basic JS module that registers a simple custom element
   const ms = new MagicString('');
   ms.append(`import { defineComponent, attachStyles } from "/src/runtime/index";\n`);
@@ -91,54 +152,17 @@ export async function transformSFC(code: string, id: string) {
     }
 
     if (found.size) {
-      const componentsDir = path.resolve(process.cwd(), 'components');
+      // Use the cached tag-to-path map instead of rescanning fs on every transform
+      const globalMap = getTagToPathMap();
       const tagToPath: Record<string,string> = {};
-
-      // helper: recursively scan components dir for .sfc files and check their declared tag
-      function scanComponents(dir: string) {
-        const list = fs.readdirSync(dir);
-        for (const file of list) {
-          const full = path.join(dir, file);
-          const st = fs.statSync(full);
-          if (st.isDirectory()) {
-            scanComponents(full);
-          } else if (file.endsWith('.sfc')) {
-            const content = fs.readFileSync(full, 'utf8');
-            const scriptMatch = content.match(/<script[\s\S]*?>([\s\S]*?)<\/script>/i);
-            const script = scriptMatch ? scriptMatch[1] : '';
-            const tagMatch = script.match(/(?:static\s+)?tag\s*[=:]\s*['"`]([^'"`]+)['"`]/);
-            const rel = full;
-            if (tagMatch) {
-              const tagName = tagMatch[1];
-              for (const t of Array.from(found)) {
-                if (!tagToPath[t] && tagName === t) tagToPath[t] = rel;
-              }
-            }
-            // also map by filename heuristics: folder/file matching tag parts (e.g., site-nav -> components/site/Nav.sfc)
-            const base = path.basename(file, '.sfc');
-            for (const t of Array.from(found)) {
-              if (tagToPath[t]) continue;
-              const parts = t.split('-');
-              if (parts.length >= 2) {
-                const folder = parts[0];
-                const fname = parts.slice(1).map(p => p[0].toUpperCase() + p.slice(1)).join('');
-                const cand1 = path.join(componentsDir, folder, fname + '.sfc');
-                const cand2 = path.join(componentsDir, folder, parts.slice(1).join('-') + '.sfc');
-                if (full === cand1 || full === cand2) {
-                  // avoid mapping the parent file to itself
-                  if (path.resolve(full) !== path.resolve(id)) {
-                    tagToPath[t] = rel;
-                  }
-                }
-              }
-              // fallback: filename equals tag (case-insensitive)
-              if (!tagToPath[t] && base.toLowerCase() === t.toLowerCase() && path.resolve(full) !== path.resolve(id)) tagToPath[t] = rel;
-            }
+      for (const t of found) {
+        if (globalMap[t]) {
+          // avoid mapping the parent file to itself
+          if (path.resolve(globalMap[t]) !== path.resolve(id)) {
+            tagToPath[t] = globalMap[t];
           }
         }
       }
-
-      try { if (fs.existsSync(componentsDir)) scanComponents(componentsDir); } catch(e){}
 
       // For each mapped tag, inject a side-effect import relative to this sfc's id
       const imports: string[] = [];
