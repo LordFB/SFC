@@ -1,255 +1,349 @@
 # SFC Framework
 
-A lightweight Vite plugin that transforms Single-File Components (`.sfc`) into native Web Components (Custom Elements). Write clean, declarative components with familiar Vue-like syntax while generating zero-dependency vanilla Custom Elements.
+A Vite plugin that compiles Single-File Components into native [Web Components](https://developer.mozilla.org/en-US/docs/Web/API/Web_components) (Custom Elements). Familiar `.sfc` syntax — `<template>`, `<script>`, `<style>`, `<route>` — zero-dependency output.
 
-[![Made with Vite](https://img.shields.io/badge/Made%20with-Vite-646CFF?style=flat-square&logo=vite)](https://vitejs.dev/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Made with Vite](https://img.shields.io/badge/Vite-5-646CFF?style=flat-square&logo=vite)](https://vitejs.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow?style=flat-square)](LICENSE)
 
-## Features
+---
 
-- 🚀 **Native Web Components** - Compiles to standard Custom Elements with no runtime framework
-- 📦 **Single-File Components** - `<template>`, `<script>`, `<style>`, and `<route>` blocks in one file
-- 🎨 **Shadow DOM Support** - Optional style encapsulation with `shadow: true`
-- 🔧 **TypeScript Decorators** - `@click`, `@input`, `@change`, `@debounce`, `@throttle`
-- 🛣️ **File-Based Routing** - Automatic route generation from `<route>` blocks
-- ⚡ **Hot Module Replacement** - Full HMR support for templates, styles, and scripts
-- 🎯 **Template Interpolation** - `{{ param }}` syntax with automatic route/query param binding
-- 💅 **SCSS Support** - Built-in Sass preprocessing with `lang="scss"`
-- 🔗 **Auto-Imports** - Automatically imports nested components with dashed tags
+## Why?
 
-## Installation
+Most component frameworks carry a runtime. SFC compiles away at build time: the browser gets plain Custom Elements, standard DOM APIs, no virtual DOM, no diffing. The result is a thin layer over what the platform already provides.
+
+## Getting Started
 
 ```bash
 npm install
+npm run dev          # Vite dev server at http://localhost:5173
+npm run dev:shop     # Shop API server at http://localhost:5174 (optional, for the demo shop)
 ```
 
-## Quick Start
+Open [http://localhost:5173/shop](http://localhost:5173/shop) to see the included demo app.
 
-```bash
-# Start development server
-npm run dev
-
-# Run production server
-npm run serve
-```
-
-## Component Syntax
-
-### Object-Based (Simple)
+## Quick Example
 
 ```html
+<!-- components/Counter.sfc -->
 <template>
-  <div class="example">
-    <h3>Hello World</h3>
-    <p>User ID: {{ id }}</p>
+  <div class="counter">
+    <p>Count: <span class="count">0</span></p>
+    <button class="inc">+1</button>
   </div>
 </template>
 
 <script lang="ts">
-export default {
-  tag: 'x-example',
-  shadow: true,
-  connectedCallback() {
-    console.log('Connected with params:', this.params);
+export default class extends HTMLElement {
+  static tag = 'x-counter';
+  n = 0;
+
+  @click('.inc')
+  increment() {
+    this.n++;
+    this.querySelector('.count')!.textContent = String(this.n);
   }
-};
+}
 </script>
 
-<style>
-.example {
-  padding: 12px;
-  border: 1px solid #ddd;
+<style lang="scss">
+.counter {
+  padding: 1rem;
+  button { margin-top: 0.5rem; }
 }
 </style>
 
-<route path="/example/:id" methods="GET,POST" />
+<route path="/counter" />
 ```
 
-### Class-Based (With Decorators)
+That's it — a routable Web Component with scoped styles and declarative event binding.
+
+## Component Syntax
+
+Every `.sfc` file can contain four blocks:
+
+| Block | Purpose |
+|---|---|
+| `<template>` | HTML markup. Supports `{{ param }}` interpolation for route/query params. |
+| `<script lang="ts">` | Component logic. Export an object or a class extending `HTMLElement`. |
+| `<style>` | CSS (or SCSS with `lang="scss"`). Add `global` attribute for document-level styles. |
+| `<route>` | Declares the URL path, HTTP methods, and routing behaviour. |
+
+### Object API
+
+Best for simple, presentational components:
 
 ```html
-<template>
-  <input class="search-input" type="text" placeholder="Search..." />
-  <button class="submit-btn">Submit</button>
-</template>
+<script lang="ts">
+export default {
+  tag: 'x-greeting',
+  shadow: true,
+  connectedCallback() {
+    console.log('Mounted with params:', this.params);
+  }
+};
+</script>
+```
 
+### Class API
+
+For components with event handling, decorators, and richer logic:
+
+```html
 <script lang="ts">
 export default class extends HTMLElement {
   static tag = 'x-search';
 
-  @input('.search-input')
+  @input('.search-box')
   @debounce(300)
   onSearch(e) {
     console.log('Search:', e.target.value);
   }
 
-  @click('.submit-btn')
-  onSubmit(e) {
-    console.log('Submitted!');
+  @click('.clear-btn')
+  onClear() {
+    this.querySelector('.search-box').value = '';
   }
 }
 </script>
-
-<style>
-.search-input {
-  padding: 8px;
-  border: 1px solid #ccc;
-}
-.submit-btn {
-  padding: 8px 16px;
-}
-</style>
 ```
 
 ## Decorators
 
+Decorators bind DOM events and apply timing transforms — no manual `addEventListener` / `removeEventListener` needed. Listeners are automatically cleaned up on disconnect.
+
 | Decorator | Description |
-|-----------|-------------|
-| `@click(selector)` | Binds click event to matching elements |
-| `@input(selector)` | Binds input event to matching elements |
-| `@change(selector)` | Binds change event to matching elements |
-| `@debounce(ms)` | Debounces method execution by specified milliseconds |
-| `@throttle(ms)` | Throttles method to once per specified milliseconds |
+|---|---|
+| `@click(selector?)` | Bind click events. Selector is optional; defaults to the component itself. |
+| `@input(selector?)` | Bind input events. |
+| `@change(selector?)` | Bind change events. |
+| `@submit(selector?)` | Bind submit events. |
+| `@debounce(ms)` | Delay execution until `ms` after last call. Stack with event decorators. |
+| `@throttle(ms)` | Limit execution to once per `ms`. Stack with event decorators. |
 
-**Example with timing decorators:**
+```html
+<script lang="ts">
+export default class extends HTMLElement {
+  static tag = 'x-form';
 
-```typescript
-@input('.search-box')
-@debounce(300)
-handleSearch(e) {
-  // Only fires 300ms after user stops typing
-  this.performSearch(e.target.value);
+  @input('.email')
+  @debounce(400)
+  validateEmail(e) { /* fires 400ms after user stops typing */ }
+
+  @click('.save')
+  @throttle(1000)
+  save() { /* at most once per second */ }
 }
-
-@click('.scroll-handler')
-@throttle(100)
-handleScroll() {
-  // Fires at most once every 100ms
-  this.updateScrollPosition();
-}
+</script>
 ```
 
 ## Routing
 
-Define routes directly in your component with the `<route>` block:
+### Declaring Routes
+
+Add a `<route>` block to any component:
 
 ```html
-<route path="/users/:id" methods="GET,POST" lazy="component" />
+<!-- Static path -->
+<route path="/about" />
+
+<!-- Dynamic params -->
+<route path="/users/:id" />
+
+<!-- Multiple HTTP methods (enables server-side POST handling) -->
+<route path="/contact" methods="GET,POST" />
+
+<!-- Redirect -->
+<route redirect="/shop/" method="301" />
 ```
 
-Route parameters are automatically extracted and available via `this.params`:
+Routes are collected at build time from all `.sfc` files and exposed as a virtual module:
 
-```typescript
-connectedCallback() {
-  console.log(this.params.id);  // Route param from /users/:id
-}
+```ts
+import { routes } from 'virtual:routes';
 ```
 
-Access all routes programmatically:
+### Route Parameters & Query Strings
 
-```typescript
-import routes from 'virtual:routes';
-// Returns array of route definitions with path, methods, paramNames, etc.
-```
-
-## Template Interpolation
-
-Use `{{ param }}` syntax to interpolate route and query parameters:
+Parameters are parsed automatically and available in `connectedCallback` via `this.params`:
 
 ```html
 <template>
-  <h1>User Profile</h1>
-  <p>User ID: {{ id }}</p>
+  <h1>User {{ id }}</h1>
   <p>Tab: {{ tab }}</p>
 </template>
 
-<!-- For URL: /users/123?tab=settings -->
-<!-- Renders: User ID: 123, Tab: settings -->
-```
-
-## Styling
-
-### Scoped Styles (Shadow DOM)
-
-```html
-<script>
+<script lang="ts">
 export default {
-  tag: 'x-component',
-  shadow: true  // Styles are encapsulated
+  tag: 'x-user',
+  connectedCallback() {
+    // URL: /users/42?tab=settings
+    console.log(this.params.id);   // "42"
+    console.log(this.params.tab);  // "settings"
+  }
 };
 </script>
 
+<route path="/users/:id" />
+```
+
+### SPA Navigation
+
+The client-side router intercepts `<a>` clicks, supports `popstate`, and uses the [View Transition API](https://developer.mozilla.org/en-US/docs/Web/API/View_Transition_API) when available. Links are preloaded on hover for instant navigation.
+
+## Styling
+
+### Scoped (Shadow DOM)
+
+Set `shadow: true` to encapsulate styles:
+
+```html
+<script>
+export default { tag: 'x-card', shadow: true };
+</script>
+
 <style>
-/* Only affects this component */
-.button { color: blue; }
+/* Only affects this component's shadow tree */
+p { color: blue; }
 </style>
 ```
 
 ### Global Styles
 
+Use the `global` attribute to inject styles into the document:
+
 ```html
 <style global>
-/* Applied to document, not shadow DOM */
+:root { --accent: #667eea; }
 body { font-family: sans-serif; }
 </style>
 ```
 
-### SCSS Support
+Global styles are also injected into shadow roots so themed components stay consistent.
+
+### SCSS
 
 ```html
 <style lang="scss">
-.container {
+.card {
   padding: 1rem;
-  
-  .nested {
-    color: blue;
-    
-    &:hover {
-      color: red;
-    }
-  }
+  &__title { font-weight: bold; }
+  &:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
 }
 </style>
 ```
 
-## Architecture
+## Server-Side POST Handlers
 
-The framework uses a 3-stage pipeline:
+Components with `methods="GET,POST"` can export a `postHandler` that runs on the server during development:
 
-1. **Transformer** (`src/transformer.ts`) - Regex extracts blocks → generates JS module via MagicString
-2. **Plugin** (`src/plugin.ts`) - Handles virtual modules, Babel decorator preprocessing, route manifest
-3. **Runtime** (`src/runtime/index.ts`) - `defineComponent()` registers elements, wires decorators, manages styles
+```html
+<script lang="ts">
+export default {
+  tag: 'x-contact',
+  postHandler(body, req, res) {
+    // Runs server-side in Node.js
+    return {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+      body: { message: 'Received', data: body }
+    };
+  }
+};
+</script>
+
+<route path="/contact" methods="GET,POST" />
+```
+
+Handler-only components (no `<template>`, no `tag`) are purely server-side and produce no client-side code.
+
+## Auto-Imports
+
+Dashed custom element tags used in `<template>` are automatically resolved to their `.sfc` files:
+
+```html
+<template>
+  <!-- Resolves to components/shop/Nav.sfc (tag: shop-nav) -->
+  <shop-nav></shop-nav>
+  <main>...</main>
+</template>
+```
+
+No manual imports needed — the transformer scans the components directory and injects side-effect imports.
+
+## Production Build
+
+Build the frontend and run a standalone server that includes the shop API:
+
+```bash
+npm run build       # Vite production build → dist/public/
+npm run start       # Standalone Node.js server on port 3000
+```
+
+The production server provides:
+
+- Static file serving with Brotli/gzip compression
+- ETag-based caching (`304` responses) and immutable hashing for assets
+- SPA fallback for client-side routes
+- Integrated API endpoints (no separate API server needed)
+
+Set `PORT` environment variable to change the default port:
+
+```bash
+PORT=8080 npm run start
+```
 
 ## Project Structure
 
 ```
-├── components/          # Your .sfc components
-│   ├── Home.sfc
-│   ├── User.sfc
-│   └── shop/           # Nested components
+├── components/              # .sfc components
+│   ├── GlobalStyles.sfc     # Document-level global styles
+│   ├── Home.sfc             # Redirect route (/ → /shop/)
+│   ├── NotFound.sfc         # 404 page
+│   ├── shop/                # Shop demo app
+│   │   ├── Index.sfc
+│   │   ├── Products.sfc
+│   │   ├── Cart.sfc
+│   │   └── api/             # Server-only POST handlers
+│   ├── site/                # Documentation pages
+│   └── tetris/              # Tetris game demo
 ├── src/
-│   ├── main.ts         # Application entry
-│   ├── plugin.ts       # Vite plugin
-│   ├── transformer.ts  # SFC parser
-│   └── runtime/        # Browser runtime
-├── vite.config.ts
+│   ├── main.ts              # SPA router & entry point
+│   ├── plugin.ts            # Vite plugin
+│   ├── transformer.ts       # .sfc → JS compiler
+│   ├── runtime/index.ts     # defineComponent, attachStyles, decorators
+│   └── cache.ts             # LRU transform cache with disk persistence
+├── server.prod.js           # Production server
+├── shop-db.js               # SQLite database (demo shop)
+├── vite.config.ts            # Dev config
+├── vite.config.build.ts      # Production build config
 └── index.html
 ```
 
-## Scripts
+## All Scripts
 
 | Command | Description |
-|---------|-------------|
-| `npm run dev` | Start dev server with HMR on port 5173 |
-| `npm run build` | Production build to `dist/` |
-| `npm run serve` | Run production server (server.js) |
+|---|---|
+| `npm run dev` | Dev server with HMR (port 5173) |
+| `npm run dev:shop` | Shop API server (port 5174) |
+| `npm run dev:prod` | Dev server with production-like optimizations |
+| `npm run build` | Production build to `dist/public/` |
+| `npm run start` | Production server (port 3000) |
+| `npm run serve` | Legacy JIT dev server |
+
+## How It Works
+
+1. **Transformer** — Regex-extracts `<template>`, `<script>`, `<style>`, `<route>` blocks from `.sfc` files. Generates a JS module that calls `defineComponent()` to register a Custom Element.
+2. **Plugin** — Vite plugin that hooks into `transform` (compile `.sfc`), `load` (handle `?sfc-script` virtual imports with Babel decorator preprocessing), and `resolveId` (serve `virtual:routes`). Also wires up server-side POST handler middleware.
+3. **Runtime** — `defineComponent()` registers the Custom Element, attaches templates via cached `DocumentFragment` cloning, wires decorator metadata to event listeners, manages Shadow DOM, injects global/local styles via `adoptedStyleSheets`, and cleans up on disconnect.
 
 ## Browser Support
 
-Works in all modern browsers that support:
+Requires:
 - Custom Elements v1
-- Shadow DOM v1
-- ES2020+
+- Shadow DOM v1 (optional per component)
+- ES2022+
+- View Transition API (optional, graceful fallback)
 
 ## License
 
