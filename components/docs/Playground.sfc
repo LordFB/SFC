@@ -2,7 +2,7 @@
   <section class="playground-page">
       <header class="playground-head"><div><span>05 / SFC PLAYGROUND</span><h1>Code. Compile.<br><em>See it breathe.</em></h1>
       <p>A self-hosted Monaco workspace with an isolated live preview. Edit the template, class behavior, or styles; the preview recompiles after every pause.</p></div><div class="playground-status"><i></i><span id="editor-status">LOADING MONACO</span></div></header>
-      <div class="workbench">A self-hosted Monaco workspace with an isolated live preview. Edit the template, class behavior, or styles; the preview recompiles after every pause.
+      <div class="workbench">
         <div class="workbench-bar"><div class="file-tab"><i>S</i><span>Counter.sfc</span><b>●</b></div><div class="workbench-actions"><button id="format">FORMAT</button><button id="reset">RESET</button><button class="run" id="run">RUN <span>▶</span></button></div></div>
         <div class="workspace">
           <div class="editor-pane"><div id="editor" aria-label="SFC Monaco editor"><textarea id="editor-fallback" spellcheck="false"></textarea></div><footer><span>SFC</span><b id="position">Ln 1, Col 1</b><b>UTF-8</b><b>Spaces: 2</b></footer></div>
