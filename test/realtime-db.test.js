@@ -33,7 +33,7 @@ function startService(filename, options = {}) {
         server,
         url: `http://127.0.0.1:${address.port}`,
         async close() {
-          service.close();
+          await service.close();
           await new Promise(done => server.close(done));
         }
       });
@@ -109,21 +109,21 @@ test.after(() => {
   fs.rmSync(testDirectory, { recursive: true, force: true });
 });
 
-test('persists JSON values and enforces atomic compare-and-set versions', () => {
+test('persists JSON values and enforces atomic compare-and-set versions', async () => {
   const filename = path.join(testDirectory, 'persistence.db');
   let database = createRealtimeDatabase({ filename });
-  const first = database.set('room/status', { online: true }, 0);
+  const first = await database.set('room/status', { online: true }, 0);
   assert.equal(first.version, 1);
-  assert.throws(
-    () => database.set('room/status', { online: false }, 0),
+  await assert.rejects(
+    database.set('room/status', { online: false }, 0),
     error => error instanceof RealtimeConflictError && error.current.version === 1
   );
-  database.close();
+  await database.close();
 
   database = createRealtimeDatabase({ filename });
-  assert.deepEqual(database.get('room/status').value, { online: true });
-  assert.equal(database.get('room/status').version, 1);
-  database.close();
+  assert.deepEqual((await database.get('room/status')).value, { online: true });
+  assert.equal((await database.get('room/status')).version, 1);
+  await database.close();
 });
 
 test('fans out hundreds of concurrent writes to every subscriber in order', { timeout: 20_000 }, async () => {

@@ -136,7 +136,7 @@ test('rejects missing origin and CSRF while ignoring attacker-supplied session I
   await attacker.bootstrap();
   result = await attacker.request('/shop/api/cart', {
     method: 'POST',
-    body: { action: 'get', sessionId: sessionFor(owner).id },
+    body: { action: 'get', sessionId: (await sessionFor(owner)).id },
   });
   assert.equal(result.data.item_count, 0);
 });
