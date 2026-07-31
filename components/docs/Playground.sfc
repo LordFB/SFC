@@ -1,0 +1,149 @@
+<template>
+  <sfc-doc-shell section="playground">
+    <section class="playground-page">
+      <header class="playground-head"><div><span>05 / SFC PLAYGROUND</span><h1>Code. Compile.<br><em>See it breathe.</em></h1><p>A self-hosted Monaco workspace with an isolated live preview. Edit the template, class behavior, or styles; the preview recompiles after every pause.</p></div><div class="playground-status"><i></i><span id="editor-status">LOADING MONACO</span></div></header>
+      <div class="workbench">
+        <div class="workbench-bar"><div class="file-tab"><i>S</i><span>Counter.sfc</span><b>●</b></div><div class="workbench-actions"><button id="format">FORMAT</button><button id="reset">RESET</button><button class="run" id="run">RUN <span>▶</span></button></div></div>
+        <div class="workspace">
+          <div class="editor-pane"><div id="editor" aria-label="SFC Monaco editor"><textarea id="editor-fallback" spellcheck="false"></textarea></div><footer><span>SFC</span><b id="position">Ln 1, Col 1</b><b>UTF-8</b><b>Spaces: 2</b></footer></div>
+          <div class="preview-pane"><div class="preview-bar"><span>LIVE PREVIEW</span><div><button data-width="mobile" title="Mobile preview">▯</button><button data-width="tablet" title="Tablet preview">▭</button><button class="active" data-width="desktop" title="Desktop preview">▱</button></div><b id="compile-time">READY</b></div><div class="preview-stage"><iframe id="preview" title="SFC live preview" sandbox="allow-scripts"></iframe></div><div class="diagnostics" id="diagnostics"><i></i><span>No diagnostics. Preview is isolated in a sandboxed iframe.</span></div></div>
+        </div>
+      </div>
+      <div class="playground-notes"><article><span>01</span><h3>Real Monaco</h3><p>The same editor core that powers VS Code, self-hosted with its worker and a custom SFC tokenizer.</p></article><article><span>02</span><h3>Safe preview boundary</h3><p>User code executes inside a sandboxed, opaque-origin iframe—not in the documentation application.</p></article><article><span>03</span><h3>Fast feedback</h3><p>Template and style blocks render directly; compatible browser JavaScript custom-element classes execute live.</p></article></div>
+      <a class="doc-next" href="/stress-testing"><span>FINAL CHAPTER<strong>Put the framework under load</strong></span><i>→</i></a>
+    </section>
+  </sfc-doc-shell>
+</template>
+
+<script lang="ts">
+import './DocsStyles.sfc'; import './Shell.sfc';
+
+const initialSource = `<template>
+  <main class="counter-card">
+    <span>LIVE SFC COMPONENT</span>
+    <h1>Count: <output>0</output></h1>
+    <p>Edit this component. The preview recompiles as you type.</p>
+    <button class="decrease">−</button>
+    <button class="increase">+</button>
+  </main>
+</template>
+
+<script>
+export default class extends HTMLElement {
+  static ['tag'] = 'play-counter';
+  count = 0;
+
+  connectedCallback() {
+    Promise.resolve().then(() => {
+      this.querySelector('.decrease')?.addEventListener('click', () => this.update(-1));
+      this.querySelector('.increase')?.addEventListener('click', () => this.update(1));
+    });
+  }
+
+  update(delta) {
+    this.count += delta;
+    this.querySelector('output').textContent = String(this.count);
+  }
+}
+<\/script>
+
+<${'style'}>
+play-counter { min-height: 100vh; display: grid; place-items: center; color: #eaf0e6; background: #10130f; font-family: system-ui; }
+play-counter .counter-card { width: min(420px, 90vw); padding: 40px; border: 1px solid #3c4737; background: linear-gradient(145deg, #181d17, #0c0f0c); box-shadow: 0 30px 90px #0008; }
+play-counter span { color: #8b9688; font: 10px monospace; letter-spacing: 2px; }
+play-counter h1 { margin: 18px 0 8px; font: 42px Georgia; }
+play-counter p { color: #818b80; line-height: 1.6; }
+play-counter button { width: 52px; height: 44px; margin: 15px 7px 0 0; color: #0b0e09; border: 0; background: #c4ff4d; font-size: 20px; cursor: pointer; }
+</${'style'}>`;
+
+export default class extends HTMLElement {
+  static tag = 'sfc-playground-page';
+  private editor: any = null;
+  private debounce = 0;
+  private cleanup: Array<() => void> = [];
+
+  connectedCallback() {
+    Promise.resolve().then(() => {
+      const fallback = this.querySelector('#editor-fallback') as HTMLTextAreaElement;
+      fallback.value = initialSource;
+      fallback.addEventListener('input', this.scheduleCompile);
+      this.cleanup.push(() => fallback.removeEventListener('input', this.scheduleCompile));
+      this.bindButton('#run', () => this.compile());
+      this.bindButton('#reset', () => { this.setValue(initialSource); this.compile(); });
+      this.bindButton('#format', () => this.editor?.getAction('editor.action.formatDocument')?.run());
+      this.querySelectorAll('[data-width]').forEach(button => {
+        const handler = () => this.setPreviewWidth(button.getAttribute('data-width'), button);
+        button.addEventListener('click', handler); this.cleanup.push(() => button.removeEventListener('click', handler));
+      });
+      this.loadMonaco();
+      this.compile();
+    });
+  }
+
+  disconnectedCallback() { clearTimeout(this.debounce); this.cleanup.splice(0).forEach(fn => fn()); this.editor?.dispose(); this.editor = null; }
+
+  private bindButton(selector: string, handler: EventListener) { const el=this.querySelector(selector); el?.addEventListener('click',handler); this.cleanup.push(()=>el?.removeEventListener('click',handler)); }
+
+  private loadMonaco() {
+    const ready = () => {
+      const amdRequire = (window as any).require;
+      amdRequire.config({ paths: { vs: '/vendor/monaco/vs' } });
+      amdRequire(['vs/editor/editor.main'], () => this.createEditor((window as any).monaco), (error: unknown) => this.showDiagnostic(error));
+    };
+    if ((window as any).monaco?.editor) return this.createEditor((window as any).monaco);
+    if ((window as any).require?.config) return ready();
+    const script = document.createElement('script'); script.src='/vendor/monaco/vs/loader.js'; script.onload=ready; script.onerror=()=>this.showDiagnostic('Monaco loader could not be loaded'); document.head.appendChild(script);
+    this.cleanup.push(()=>script.remove());
+  }
+
+  private createEditor(monaco: any) {
+    if (this.editor || !this.isConnected) return;
+    monaco.languages.register({ id: 'sfc' });
+    monaco.languages.setMonarchTokensProvider('sfc', { tokenizer: { root: [[/<\/?(template|script|style|route)/, 'tag'], [/[{}]/, 'delimiter.bracket'], [/\b(class|extends|static|export|default|const|let|return|async|await|import|from|new)\b/, 'keyword'], [/'[^']*'|"[^"]*"|`[^`]*`/, 'string'], [/\/\/.*$/, 'comment'], [/\d+/, 'number']] } });
+    monaco.editor.defineTheme('sfc-night', { base:'vs-dark', inherit:true, rules:[{token:'tag',foreground:'C4FF4D',fontStyle:'bold'},{token:'keyword',foreground:'8EDCFF'},{token:'string',foreground:'CE9178'}], colors:{'editor.background':'#090b09','editorLineNumber.foreground':'#414941','editorLineNumber.activeForeground':'#C4FF4D','editorCursor.foreground':'#C4FF4D','editor.selectionBackground':'#34432788'} });
+    const host=this.querySelector('#editor') as HTMLElement; const fallback=this.querySelector('#editor-fallback') as HTMLTextAreaElement;
+    this.editor=monaco.editor.create(host,{value:fallback.value,language:'sfc',theme:'sfc-night',fontSize:13,lineHeight:21,fontFamily:'SFMono-Regular, Consolas, monospace',minimap:{enabled:false},automaticLayout:true,scrollBeyondLastLine:false,padding:{top:14},tabSize:2});
+    fallback.hidden=true; this.editor.onDidChangeModelContent(this.scheduleCompile); this.editor.onDidChangeCursorPosition((e:any)=>{ const el=this.querySelector('#position'); if(el) el.textContent=`Ln ${e.position.lineNumber}, Col ${e.position.column}`; });
+    this.setStatus('MONACO READY');
+  }
+
+  private scheduleCompile = () => { clearTimeout(this.debounce); this.debounce=window.setTimeout(()=>this.compile(),260); };
+  private getValue(){ return this.editor?.getValue() ?? (this.querySelector('#editor-fallback') as HTMLTextAreaElement).value; }
+  private setValue(value:string){ if(this.editor) this.editor.setValue(value); else (this.querySelector('#editor-fallback') as HTMLTextAreaElement).value=value; }
+
+  private compile() {
+    const started=performance.now(); const source=this.getValue();
+    try {
+      const template=this.block(source,'template'); const style=this.block(source,'style'); let script=this.block(source,'script');
+      if(!template) throw new Error('Add a <template> block to render the preview.');
+      const tag=script.match(/static\s+(?:tag|\[['"]tag['"]\])\s*=\s*['"]([a-z][\w-]*-[\w-]+)['"]/)?.[1] || 'play-preview';
+      script=script.replace(/export\s+default\s+class/, 'class UserComponent');
+      const executable=script.trim() ? `${script}\nclass PreviewElement extends UserComponent { connectedCallback(){ if(super.connectedCallback) super.connectedCallback(); if(!this.__mounted){ this.__mounted=true; this.insertAdjacentHTML('beforeend', ${JSON.stringify(template)}); } } }\ncustomElements.define(${JSON.stringify(tag)}, PreviewElement);` : `customElements.define(${JSON.stringify(tag)}, class extends HTMLElement { connectedCallback(){ this.innerHTML=${JSON.stringify(template)}; } });`;
+      const escapedScript=executable.replace(/<\/script/gi,'<\\/script');
+      const html=`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><${'style'}>*{box-sizing:border-box}html,body{margin:0;min-height:100%}${style}</${'style'}></head><body><${tag}></${tag}><script>window.addEventListener('error',e=>document.body.dataset.error=e.message);${escapedScript}<\/script></body></html>`;
+      (this.querySelector('#preview') as HTMLIFrameElement).srcdoc=html; this.showDiagnostic(null); this.setStatus('PREVIEW LIVE');
+    } catch(error) { this.showDiagnostic(error); }
+    const time=this.querySelector('#compile-time'); if(time) time.textContent=`${(performance.now()-started).toFixed(1)} MS`;
+  }
+
+  private block(source:string,name:string){ return source.match(new RegExp(`<${name}[^>]*>([\\s\\S]*?)<\\/${name}>`,'i'))?.[1]?.trim() || ''; }
+  private showDiagnostic(error:unknown){ const box=this.querySelector('#diagnostics'); if(!box)return; box.classList.toggle('error',Boolean(error)); const text=box.querySelector('span'); if(text) text.textContent=error ? (error instanceof Error?error.message:String(error)) : 'No diagnostics. Preview is isolated in a sandboxed iframe.'; }
+  private setStatus(value:string){ const el=this.querySelector('#editor-status'); if(el)el.textContent=value; }
+  private setPreviewWidth(width:string|null,button:Element){ const frame=this.querySelector('#preview') as HTMLElement; frame.style.width=width==='mobile'?'390px':width==='tablet'?'720px':'100%'; this.querySelectorAll('[data-width]').forEach(b=>b.classList.toggle('active',b===button)); }
+}
+</script>
+
+<style>
+sfc-playground-page { display:block; min-height:100vh; color:#edf2e9; background:#0a0c0b; }
+sfc-playground-page .playground-page { width:calc(100vw - 270px); min-height:100vh; padding:52px 34px 90px; }
+sfc-playground-page .playground-head { margin:0 auto 35px; max-width:1400px; display:flex; justify-content:space-between; align-items:end; }
+sfc-playground-page .playground-head>div>span { color:#657065; font:800 8px ui-monospace,monospace; letter-spacing:1.5px; } sfc-playground-page .playground-head h1 { margin:15px 0 12px; font:400 clamp(40px,5vw,70px)/.95 Georgia,serif; letter-spacing:-3px; } sfc-playground-page .playground-head h1 em{color:#c4ff4d} sfc-playground-page .playground-head p{max-width:650px;color:#818b80;font-size:12px;line-height:1.7}
+sfc-playground-page .playground-status{display:flex;align-items:center;gap:8px;color:#7b857a;font:8px ui-monospace,monospace;letter-spacing:1px} sfc-playground-page .playground-status i{width:7px;height:7px;border-radius:50%;background:#c4ff4d;box-shadow:0 0 9px #c4ff4d88}
+sfc-playground-page .workbench{max-width:1400px;margin:0 auto;border:1px solid #303730;background:#080a08;box-shadow:0 35px 100px #0007} sfc-playground-page .workbench-bar{height:46px;display:flex;justify-content:space-between;border-bottom:1px solid #292f29;background:#111411} sfc-playground-page .file-tab{padding:0 16px;display:flex;align-items:center;gap:9px;color:#b4beb1;border-right:1px solid #2a312a;font:10px ui-monospace,monospace} sfc-playground-page .file-tab i{width:20px;height:20px;display:grid;place-items:center;color:#0b0e09;background:#c4ff4d;font-style:normal;font-weight:900} sfc-playground-page .file-tab b{color:#c4ff4d;font-size:7px}
+sfc-playground-page .workbench-actions{display:flex} sfc-playground-page .workbench-actions button{padding:0 16px;color:#7c867b;border:0;border-left:1px solid #292f29;background:transparent;cursor:pointer;font:750 8px ui-monospace,monospace;letter-spacing:1px} sfc-playground-page .workbench-actions .run{color:#0a0d09;background:#c4ff4d}
+sfc-playground-page .workspace{height:670px;display:grid;grid-template-columns:1fr 1fr} sfc-playground-page .editor-pane,sfc-playground-page .preview-pane{min-width:0;display:flex;flex-direction:column} sfc-playground-page .editor-pane{border-right:1px solid #303730} sfc-playground-page #editor{min-height:0;flex:1;position:relative} sfc-playground-page #editor-fallback{width:100%;height:100%;padding:18px;resize:none;color:#c8d1c5;border:0;outline:0;background:#090b09;font:12px/1.7 ui-monospace,monospace} sfc-playground-page .editor-pane footer{height:25px;padding:0 10px;display:flex;align-items:center;gap:15px;color:#6a746a;background:#151915;font:7px ui-monospace,monospace} sfc-playground-page .editor-pane footer span{margin-right:auto;color:#0a0d09;background:#c4ff4d;padding:3px 7px}
+sfc-playground-page .preview-bar{height:39px;padding:0 12px;display:flex;align-items:center;justify-content:space-between;color:#687268;border-bottom:1px solid #293029;background:#101310;font:7px ui-monospace,monospace;letter-spacing:1px} sfc-playground-page .preview-bar>div{display:flex} sfc-playground-page .preview-bar button{width:28px;height:25px;color:#5e685e;border:0;background:transparent;cursor:pointer} sfc-playground-page .preview-bar button.active{color:#c4ff4d;background:#1b2118} sfc-playground-page .preview-stage{min-height:0;padding:18px;display:flex;justify-content:center;flex:1;overflow:auto;background:repeating-conic-gradient(#111411 0 25%,#0e110e 0 50%) 0/20px 20px} sfc-playground-page #preview{width:100%;height:100%;border:1px solid #303730;background:#fff;transition:width .2s} sfc-playground-page .diagnostics{min-height:38px;padding:9px 12px;display:flex;align-items:center;gap:8px;color:#6e786e;border-top:1px solid #293029;background:#0d100d;font:8px/1.5 ui-monospace,monospace} sfc-playground-page .diagnostics i{width:6px;height:6px;border-radius:50%;background:#77b967} sfc-playground-page .diagnostics.error{color:#d79b91}sfc-playground-page .diagnostics.error i{background:#e26e5d}
+sfc-playground-page .playground-notes{max-width:1400px;margin:18px auto 55px;display:grid;grid-template-columns:repeat(3,1fr);gap:10px} sfc-playground-page .playground-notes article{padding:20px;border:1px solid #293029;background:#101310} sfc-playground-page .playground-notes span{color:#c4ff4d;font:8px ui-monospace,monospace} sfc-playground-page .playground-notes h3{margin:12px 0 6px;font-size:13px} sfc-playground-page .playground-notes p{margin:0;color:#737d73;font-size:10px;line-height:1.6} sfc-playground-page .doc-next{max-width:1400px;margin-inline:auto}
+@media(max-width:980px){sfc-playground-page .playground-page{width:100%;padding:40px 20px 70px}sfc-playground-page .workspace{height:1000px;grid-template-columns:1fr}sfc-playground-page .editor-pane{height:500px;border-right:0;border-bottom:1px solid #303730}sfc-playground-page .preview-pane{height:500px}} @media(max-width:650px){sfc-playground-page .playground-head{align-items:start;flex-direction:column;gap:15px}sfc-playground-page .workbench-actions button{padding:0 9px}sfc-playground-page .playground-notes{grid-template-columns:1fr}}
+</style>
+<route path="/playground" methods="GET" />

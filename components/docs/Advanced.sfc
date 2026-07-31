@@ -1,0 +1,54 @@
+<template>
+  <sfc-doc-shell section="advanced"><article class="doc-page">
+    <div class="doc-breadcrumb"><span>03</span><i></i><span>Full-stack patterns</span></div>
+    <header class="doc-hero"><h1>One value.<br><em>Every layer.</em></h1><p>Compose routes, authenticated APIs, SQLite transactions, and realtime values into complete features while preserving ownership, cleanup, and production safety.</p><div class="doc-meta"><span>Advanced</span><span>~28 minutes</span><span>Full stack</span><span>Realtime</span></div></header>
+    <nav class="doc-toc"><b>ON THIS PAGE</b><a href="#vertical">Vertical slice</a><a href="#live">Live demo</a><a href="#concurrency">Concurrency</a><a href="#scale">Scale</a><a href="#deploy">Deploy</a></nav>
+
+    <section class="doc-section" id="vertical"><div class="doc-section-head"><span>03.1</span><div><h2>Build a vertical slice</h2><p class="doc-lead">A feature is easiest to reason about when its browser state, transport contract, authority checks, and database mutation tell one story.</p></div></div>
+      <div class="doc-flow"><div><b>Template binding</b><span>SAFE TEXT OUTPUT</span></div><i>→</i><div><b>Realtime field</b><span>LOCAL API</span></div><i>→</i><div><b>Versioned endpoint</b><span>CAS + ORIGIN</span></div><i>→</i><div><b>SQLite + log</b><span>DURABLE EVENT</span></div></div>
+      <div class="doc-code"><div class="doc-code-head"><span>PresenceBoard.sfc</span><b>VERTICAL FEATURE</b></div><pre><code data-snippet="vertical"></code></pre></div>
+    </section>
+
+    <section class="doc-section" id="live"><div class="doc-section-head"><span>03.2</span><div><h2>Live cross-tab proof</h2><p class="doc-lead">This is not a simulated widget. Open this page twice: both tabs subscribe to the same persistent value and update through the framework lifecycle.</p></div></div>
+      <div class="live-lab"><div><span>SHARED ADVANCED DEMO</span><strong>{{sharedCount}}</strong><small>DATABASE REVISION <b id="revision">0</b></small></div><button id="decrease">−</button><button id="increase">+</button></div>
+      <aside class="doc-note blue"><b>WATCH THE OTHER TAB</b><p>The write response updates the originating component immediately. Every other process and browser receives the same version through the event log and SSE fan-out.</p></aside>
+    </section>
+
+    <section class="doc-section" id="concurrency"><div class="doc-section-head"><span>03.3</span><div><h2>Concurrency is part of the API</h2><p class="doc-lead">Unconditional writes are ideal for last-write-wins documents. Compare-and-set updates protect counters, balances, and transitions from lost updates.</p></div></div>
+      <table class="doc-table"><thead><tr><th>OPERATION</th><th>SEMANTICS</th><th>USE IT FOR</th></tr></thead><tbody><tr><td><code class="doc-inline">set(next)</code></td><td>Last committed write wins</td><td>Status, cursor, draft snapshot</td></tr><tr><td><code class="doc-inline">set(next, { expectedVersion })</code></td><td>Single atomic attempt</td><td>State-machine transition</td></tr><tr><td><code class="doc-inline">update(fn)</code></td><td>CAS loop with bounded retries</td><td>Counters and derived state</td></tr><tr><td><code class="doc-inline">delete()</code></td><td>Versioned tombstone</td><td>Durable removal notification</td></tr></tbody></table>
+      <div class="doc-code"><div class="doc-code-head"><span>state transition</span><b>EXPLICIT CONFLICT</b></div><pre><code data-snippet="transition"></code></pre></div>
+    </section>
+
+    <section class="doc-section" id="scale"><div class="doc-section-head"><span>03.4</span><div><h2>Scale the boring parts first</h2><p class="doc-lead">The server keeps one topic index, multiplexes up to 100 keys per stream, bounds each slow-client queue, and polls a retained log so sibling processes converge.</p></div></div>
+      <div class="doc-grid three"><div class="doc-card"><span>CONNECTIONS</span><h3>Multiplex</h3><p>One EventSource carries many value topics; long subscription sets shard automatically.</p></div><div class="doc-card"><span>BACKPRESSURE</span><h3>Bound memory</h3><p>Slow readers receive a capped queue and are disconnected before harming the process.</p></div><div class="doc-card"><span>PROCESSES</span><h3>Share the log</h3><p>SQLite event rows propagate commits between Node workers using the same database.</p></div></div>
+      <aside class="doc-note"><b>REAL LIMIT</b><p>SQLite is a superb single-host coordination point, not a globally distributed database. When write contention outgrows one WAL, keep the client contract and swap the server adapter.</p></aside>
+    </section>
+
+    <section class="doc-section" id="deploy"><div class="doc-section-head"><span>03.5</span><div><h2>Ship static routes and dynamic truth</h2><p class="doc-lead">Public route shells can be generated at build time. Private and mutable data remains behind runtime APIs and realtime subscriptions.</p></div></div>
+      <div class="doc-grid"><div class="doc-card"><span>BUILD TIME</span><h3>Public route data</h3><ul><li>Concrete HTML paths</li><li>Colocated JSON blobs</li><li>Hashed lazy route chunks</li></ul></div><div class="doc-card"><span>REQUEST TIME</span><h3>Private authority</h3><ul><li>HttpOnly sessions</li><li>Origin + CSRF enforcement</li><li>User-owned database reads</li></ul></div></div>
+    </section>
+    <a class="doc-next" href="/internals"><span>NEXT CHAPTER<strong>Compiler and runtime internals</strong></span><i>→</i></a>
+  </article></sfc-doc-shell>
+</template>
+<script lang="ts">
+import './DocsStyles.sfc'; import './Shell.sfc';
+import { realtimeValue } from '/src/runtime/index.ts';
+const snippets = {
+  vertical: `import { realtimeValue } from '/src/runtime/index.ts';\n\nexport default class extends HTMLElement {\n  static ['tag'] = 'presence-board';\n  room = realtimeValue('presence/room-a', { users: 0 });\n\n  connectedCallback() {\n    Promise.resolve().then(() => {\n      this.querySelector('button')?.addEventListener('click', this.join);\n    });\n  }\n\n  join = () => this.room.update(state => ({ ...state, users: state.users + 1 }));\n}\n\n// Template text: Online now: {{room}}`,
+  transition: `const snapshot = task.snapshot;\nif (!snapshot || snapshot.value.status !== 'draft') return;\n\ntry {\n  await task.set(\n    { ...snapshot.value, status: 'published' },\n    { expectedVersion: snapshot.version }\n  );\n} catch (error) {\n  if (error instanceof RealtimeConflictError) {\n    showConflict(error.current);\n  }\n}`
+};
+export default class extends HTMLElement {
+  static tag='sfc-advanced-page';
+  sharedCount = realtimeValue('docs/advanced/count', 0);
+  private cleanup: Array<() => void> = [];
+  connectedCallback(){ Promise.resolve().then(()=>{ this.querySelectorAll('[data-snippet]').forEach(n=>n.textContent=snippets[n.getAttribute('data-snippet')]); const up=()=>void this.sharedCount.update(v=>v+1); const down=()=>void this.sharedCount.update(v=>v-1); this.querySelector('#increase')?.addEventListener('click',up); this.querySelector('#decrease')?.addEventListener('click',down); this.cleanup.push(()=>this.querySelector('#increase')?.removeEventListener('click',up),()=>this.querySelector('#decrease')?.removeEventListener('click',down),this.sharedCount.subscribe((_v,s)=>{ const el=this.querySelector('#revision'); if(el) el.textContent=String(s?.version||0); })); }); }
+  disconnectedCallback(){ this.cleanup.splice(0).forEach(fn=>fn()); }
+}
+</script>
+<style>
+sfc-advanced-page .live-lab { margin: 25px 0; padding: 28px; display: grid; grid-template-columns: 1fr 52px 52px; gap: 10px; align-items: center; border: 1px solid #35402f; background: linear-gradient(120deg, rgba(196,255,77,.08), #101410); }
+sfc-advanced-page .live-lab span, sfc-advanced-page .live-lab small { display: block; color: #697369; font: 8px ui-monospace, monospace; letter-spacing: 1.1px; }
+sfc-advanced-page .live-lab strong { display: block; margin: 8px 0; color: #f0f4ed; font-size: 42px; }
+sfc-advanced-page .live-lab button { width: 52px; height: 52px; color: #c4ff4d; border: 1px solid #46533e; background: #0b0e0b; cursor: pointer; font-size: 22px; }
+</style>
+<route path="/advanced" methods="GET" />

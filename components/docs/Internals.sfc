@@ -1,0 +1,47 @@
+<template>
+  <sfc-doc-shell section="internals"><article class="doc-page">
+    <div class="doc-breadcrumb"><span>04</span><i></i><span>Compiler and runtime</span></div>
+    <header class="doc-hero"><h1>There is no<br><em>hidden machine.</em></h1><p>Follow an SFC from source text to a registered custom element, through route discovery, cached fragments, style attachment, lifecycle wrapping, and production prerendering.</p><div class="doc-meta"><span>Deep dive</span><span>~30 minutes</span><span>Compiler</span><span>Runtime</span></div></header>
+    <nav class="doc-toc"><b>ON THIS PAGE</b><a href="#compile">Compile pipeline</a><a href="#module">Generated module</a><a href="#runtime">Runtime</a><a href="#router">Router</a><a href="#production">Production</a></nav>
+
+    <section class="doc-section" id="compile"><div class="doc-section-head"><span>04.1</span><div><h2>The compile pipeline</h2><p class="doc-lead">The transformer extracts blocks, compiles optional SCSS, discovers nested custom elements, and emits one browser module plus route metadata.</p></div></div>
+      <div class="pipeline"><div><span>01</span><b>Parse blocks</b><small>template / script / style / route</small></div><i>→</i><div><span>02</span><b>Resolve graph</b><small>nested tags + script module</small></div><i>→</i><div><span>03</span><b>Emit ESM</b><small>template + CSS + metadata</small></div><i>→</i><div><span>04</span><b>Register</b><small>customElements.define</small></div></div>
+      <table class="doc-table"><thead><tr><th>SOURCE</th><th>OUTPUT RESPONSIBILITY</th><th>CACHE</th></tr></thead><tbody><tr><td>Template block</td><td>Escaped module string → DocumentFragment</td><td>By exact HTML string</td></tr><tr><td>Script block</td><td>TypeScript → ESM constructor</td><td>By file mtime</td></tr><tr><td>Style blocks</td><td>Local/global CSS attachment function</td><td>By CSS hash / stylesheet</td></tr><tr><td>Route block</td><td>Virtual route manifest entry</td><td>Route scan cache</td></tr></tbody></table>
+    </section>
+
+    <section class="doc-section" id="module"><div class="doc-section-head"><span>04.2</span><div><h2>What the compiler emits</h2><p class="doc-lead">Generated code is intentionally unsurprising: imports, strings, metadata assignments, and one call into the runtime.</p></div></div>
+      <div class="doc-code"><div class="doc-code-head"><span>conceptual output.mjs</span><b>SIMPLIFIED</b></div><pre><code data-snippet="output"></code></pre></div>
+      <aside class="doc-note"><b>NO HYDRATION FORMAT</b><p>The server does not serialize a virtual tree or component state graph. A route chunk registers a native element; the browser upgrades matching tags using platform semantics.</p></aside>
+    </section>
+
+    <section class="doc-section" id="runtime"><div class="doc-section-head"><span>04.3</span><div><h2>The wrapper does five jobs</h2><p class="doc-lead">The runtime subclasses your constructor so it can add framework behavior without rewriting your class.</p></div></div>
+      <div class="doc-grid three"><div class="doc-card"><span>01 / PARAMS</span><h3>Prepare route context</h3><p>Path and query values exist before user connectedCallback runs.</p></div><div class="doc-card"><span>02 / MOUNT</span><h3>Clone the fragment</h3><p>Cached template content is cloned into light or Shadow DOM.</p></div><div class="doc-card"><span>03 / STYLE</span><h3>Attach once</h3><p>Constructed stylesheets are reused and hash-deduplicated.</p></div><div class="doc-card"><span>04 / WIRE</span><h3>Connect behavior</h3><p>Decorator metadata and realtime fields bind after mounting.</p></div><div class="doc-card"><span>05 / RELEASE</span><h3>Clean up</h3><p>Framework listeners and subscriptions leave with the element.</p></div></div>
+      <div class="doc-code"><div class="doc-code-head"><span>runtime sequence</span><b>CONNECTED CALLBACK</b></div><pre><code data-snippet="runtime"></code></pre></div>
+    </section>
+
+    <section class="doc-section" id="router"><div class="doc-section-head"><span>04.4</span><div><h2>The router loads modules, not trees</h2><p class="doc-lead">A virtual route manifest maps URL patterns to SFC modules. Navigation lazy-imports one module, updates history, and mounts one custom element.</p></div></div>
+      <div class="doc-flow"><div><b>URL match</b><span>PATH → MANIFEST</span></div><i>→</i><div><b>Dynamic import</b><span>ROUTE CHUNK</span></div><i>→</i><div><b>Native upgrade</b><span>CUSTOM ELEMENT</span></div><i>→</i><div><b>View transition</b><span>OPTIONAL PLATFORM API</span></div></div>
+    </section>
+
+    <section class="doc-section" id="production"><div class="doc-section-head"><span>04.5</span><div><h2>Production expands declarations</h2><p class="doc-lead">Static routes become concrete HTML and JSON files. Dynamic public routes expand from resolver rows; private routes explicitly skip prerendering.</p></div></div>
+      <div class="architecture"><div class="source">SFC ROUTES</div><div class="source">PUBLIC DATA</div><span>BUILD PLUGIN</span><div class="outputs"><b>index.html</b><b>route-data.json</b><b>route chunk</b><b>manifest</b></div></div>
+      <div class="doc-code"><div class="doc-code-head"><span>production guarantees</span><b>FAIL THE BUILD</b></div><pre><code data-snippet="validation"></code></pre></div>
+    </section>
+    <a class="doc-next" href="/playground"><span>NEXT CHAPTER<strong>Build in the Monaco playground</strong></span><i>→</i></a>
+  </article></sfc-doc-shell>
+</template>
+<script lang="ts">
+import './DocsStyles.sfc'; import './Shell.sfc';
+const snippets={
+ output:`import { defineComponent, attachStyles } from '/src/runtime/index';\nimport * as script from './Example.sfc?sfc-script';\n\nconst template = '<button>Hello</button>';\nconst css = 'hello-example button { color: lime }';\nconst route = { path: '/hello', methods: 'GET', paramNames: [] };\n\nscript.default.__sfc_template = template;\nscript.default.__sfc_attach = root => attachStyles(root, css);\nscript.default.__route = route;\n\nexport default defineComponent(script.default);`,
+ runtime:`1. Parse route + query parameters\n2. Call the component's connectedCallback\n3. Clone and append the cached template fragment\n4. Attach global and component styles\n5. Connect image cache + realtime fields\n6. Wire decorators in a microtask\n7. Interpolate remaining route parameters`,
+ validation:`Build rejects:\n  ✗ duplicate concrete paths\n  ✗ missing dynamic parameters\n  ✗ unsafe path values\n  ✗ unresolved placeholders\n  ✗ dynamic routes without prerender or explicit skip\n\nBuild emits:\n  ✓ route-data blobs beside generated HTML\n  ✓ lazy hashed component chunks\n  ✓ static and route manifests`
+};
+export default class extends HTMLElement { static tag='sfc-internals-page'; connectedCallback(){ Promise.resolve().then(()=>this.querySelectorAll('[data-snippet]').forEach(n=>n.textContent=snippets[n.getAttribute('data-snippet')])); } }
+</script>
+<style>
+sfc-internals-page .pipeline { margin: 28px 0; display: flex; align-items: stretch; } sfc-internals-page .pipeline > div { padding: 18px; flex: 1; border: 1px solid #293029; background: #101310; } sfc-internals-page .pipeline > i { width: 24px; display: grid; place-items: center; color: #c4ff4d; font-style: normal; } sfc-internals-page .pipeline span, sfc-internals-page .pipeline small { display: block; color: #657065; font: 8px/1.5 ui-monospace,monospace; } sfc-internals-page .pipeline b { display:block; margin:8px 0 4px; font-size:11px; }
+sfc-internals-page .architecture { margin: 28px 0; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; text-align:center; } sfc-internals-page .architecture div, sfc-internals-page .architecture > span { padding: 16px; border: 1px solid #303830; background:#101310; font: 8px ui-monospace,monospace; letter-spacing:1px; } sfc-internals-page .architecture > span { grid-column:1/-1; color:#0b0e09; background:#c4ff4d; font-weight:900; } sfc-internals-page .architecture .outputs { grid-column:1/-1; display:grid; grid-template-columns:repeat(4,1fr); gap:6px; } sfc-internals-page .outputs b { padding:9px; color:#9da79b; border:1px solid #293029; font-size:9px; }
+@media(max-width:700px){ sfc-internals-page .pipeline{flex-direction:column} sfc-internals-page .pipeline>i{width:100%;height:24px;transform:rotate(90deg)} sfc-internals-page .architecture .outputs{grid-template-columns:1fr 1fr} }
+</style>
+<route path="/internals" methods="GET" />

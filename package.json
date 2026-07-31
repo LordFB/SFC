@@ -1,5 +1,5 @@
 {
-  "name": "sfc-shop-demo",
+  "name": "sfc-framework-showcase",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -12,7 +12,8 @@
   },
   "dependencies": {
     "argon2": "^0.44.0",
-    "better-sqlite3": "^12.5.0"
+    "better-sqlite3": "^12.5.0",
+    "monaco-editor": "^0.55.1"
   },
   "devDependencies": {
     "@babel/generator": "^7.21.0",

@@ -119,6 +119,18 @@ async function handle(req, res) {
     return;
   }
 
+  if (urlPath.startsWith('/vendor/monaco/')) {
+    const monacoRoot = path.resolve(__dirname, 'node_modules', 'monaco-editor', 'min');
+    const relativeMonacoPath = urlPath.slice('/vendor/monaco/'.length);
+    const monacoFile = path.resolve(monacoRoot, relativeMonacoPath);
+    if (!monacoFile.startsWith(monacoRoot + path.sep)) {
+      res.writeHead(403, { 'Content-Type': 'text/plain' });
+      res.end('Forbidden');
+      return;
+    }
+    if (serveStatic(monacoFile, req, res)) return;
+  }
+
   // Static file
   const safePath = path.normalize(urlPath).replace(/^(\.\.[/\\])+/, '');
   const filePath = path.join(STATIC_DIR, safePath === '/' ? 'index.html' : safePath);

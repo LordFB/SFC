@@ -1,0 +1,55 @@
+<template>
+  <sfc-doc-shell section="basics">
+    <article class="doc-page">
+      <div class="doc-breadcrumb"><span>01</span><i></i><span>Frontend foundations</span></div>
+      <header class="doc-hero"><h1>Small files.<br><em>Native power.</em></h1><p>Learn the SFC dialect from the browser upward: colocated template, TypeScript, styles, native custom elements, lifecycle hooks, events, and file-based routes—without a virtual DOM or hydration pass.</p><div class="doc-meta"><span>Beginner</span><span>~18 minutes</span><span>Browser only</span><span>Zero framework state</span></div></header>
+      <nav class="doc-toc"><b>ON THIS PAGE</b><a href="#anatomy">Anatomy</a><a href="#lifecycle">Lifecycle</a><a href="#styles">Style isolation</a><a href="#routing">Routes</a><a href="#reactivity">Realtime values</a></nav>
+
+      <section class="doc-section" id="anatomy"><div class="doc-section-head"><span>01.1</span><div><h2>The anatomy of an .sfc file</h2><p class="doc-lead">One file declares what users see, how it behaves, how it looks, and where it lives. The compiler turns it into a standards-based custom element module.</p></div></div>
+        <div class="doc-code"><div class="doc-code-head"><span>Hello.sfc</span><b>COMPLETE COMPONENT</b></div><pre><code data-snippet="anatomy"></code></pre></div>
+        <div class="doc-grid three"><div class="doc-card"><span>TEMPLATE</span><h3>Browser-native HTML</h3><p>Cloned from a cached DocumentFragment when the custom element connects.</p></div><div class="doc-card"><span>SCRIPT</span><h3>A real class</h3><p>Your default export extends HTMLElement. Browser APIs are the framework API.</p></div><div class="doc-card"><span>STYLE + ROUTE</span><h3>Colocated concerns</h3><p>CSS attaches once; route metadata powers lazy loading and production output.</p></div></div>
+      </section>
+
+      <section class="doc-section" id="lifecycle"><div class="doc-section-head"><span>01.2</span><div><h2>Lifecycle is the platform</h2><p class="doc-lead">SFC wraps—but does not replace—the custom-element lifecycle. Attach external listeners on connect and always release them on disconnect.</p></div></div>
+        <div class="doc-flow"><div><b>constructor</b><span>FIELDS INITIALIZE</span></div><i>→</i><div><b>connectedCallback</b><span>ROUTE PARAMS READY</span></div><i>→</i><div><b>template mount</b><span>FRAGMENT CLONED</span></div><i>→</i><div><b>microtask</b><span>DOM READY</span></div></div>
+        <div class="doc-code"><div class="doc-code-head"><span>Lifecycle.sfc</span><b>SAFE LISTENERS</b></div><pre><code data-snippet="lifecycle"></code></pre></div>
+        <aside class="doc-note"><b>WHY THE MICROTASK?</b><p>The class callback runs before the wrapper finishes appending the compiled template. Deferring DOM queries with <code class="doc-inline">Promise.resolve().then(...)</code> keeps class code deterministic.</p></aside>
+      </section>
+
+      <section class="doc-section" id="styles"><div class="doc-section-head"><span>01.3</span><div><h2>Choose your CSS boundary</h2><p class="doc-lead">Light DOM keeps composition simple; Shadow DOM gives a hard boundary. Both share the same SFC syntax.</p></div></div>
+        <table class="doc-table"><thead><tr><th>MODE</th><th>DECLARATION</th><th>QUERY ROOT</th><th>CSS RULE</th></tr></thead><tbody><tr><td>Light DOM</td><td>default</td><td><code class="doc-inline">this</code></td><td>Prefix selectors with the component tag</td></tr><tr><td>Shadow DOM</td><td><code class="doc-inline">static shadow = true</code></td><td><code class="doc-inline">this.shadowRoot</code></td><td>Selectors are physically isolated</td></tr><tr><td>Global</td><td><code class="doc-inline">&lt;style global&gt;</code></td><td>document</td><td>Use only for intentional foundations</td></tr></tbody></table>
+        <div class="doc-code"><div class="doc-code-head"><span>Card.sfc</span><b>LIGHT DOM CONTAINMENT</b></div><pre><code data-snippet="styles"></code></pre></div>
+      </section>
+
+      <section class="doc-section" id="routing"><div class="doc-section-head"><span>01.4</span><div><h2>A route is metadata, not a component API</h2><p class="doc-lead">One route declaration makes a component lazy-loadable, navigable through the SPA router, refresh-safe, and eligible for static generation.</p></div></div>
+        <div class="doc-grid"><div class="doc-card"><span>STATIC</span><h3>/guides</h3><p>Build output gets an HTML shell and colocated route-data blob automatically.</p></div><div class="doc-card"><span>DYNAMIC</span><h3>/guide/:slug</h3><p>Declare a prerender source—or explicitly skip—to keep production builds honest.</p></div></div>
+        <div class="doc-code"><div class="doc-code-head"><span>route declarations</span><b>BUILD-VALIDATED</b></div><pre><code data-snippet="routes"></code></pre></div>
+      </section>
+
+      <section class="doc-section" id="reactivity"><div class="doc-section-head"><span>01.5</span><div><h2>Reactive values, all the way to SQLite</h2><p class="doc-lead">A realtime value is a class field, a pub/sub subscription, a persistent database record, and a live template binding at once.</p></div></div>
+        <div class="doc-code"><div class="doc-code-head"><span>SharedCounter.sfc</span><b>REACTIVE + PERSISTENT</b></div><pre><code data-snippet="reactivity"></code></pre></div>
+        <aside class="doc-note blue"><b>LIFECYCLE MANAGED</b><p>The runtime discovers realtime fields automatically. It multiplexes subscriptions when the element connects and releases them when the element leaves the document.</p></aside>
+      </section>
+      <a class="doc-next" href="/intermediate"><span>NEXT CHAPTER<strong>Backend introduction</strong></span><i>→</i></a>
+    </article>
+  </sfc-doc-shell>
+</template>
+
+<script lang="ts">
+import './DocsStyles.sfc';
+import './Shell.sfc';
+
+const snippets = {
+  anatomy: `<template>\n  <button class="hello">Say hello</button>\n</template>\n\n<script lang="ts">\nexport default class extends HTMLElement {\n  static tag = 'hello-world';\n}\n<\/script>\n\n<style>\nhello-world .hello { color: rebeccapurple; }\n</style>\n\n<${'route'} path="/hello" methods="GET" />`,
+  lifecycle: `export default class extends HTMLElement {\n  static tag = 'safe-clock';\n  timer: number | undefined;\n\n  connectedCallback() {\n    Promise.resolve().then(() => {\n      this.timer = window.setInterval(() => this.render(), 1000);\n      this.render();\n    });\n  }\n\n  disconnectedCallback() {\n    clearInterval(this.timer);\n  }\n\n  render() {\n    this.querySelector('time')!.textContent = new Date().toLocaleTimeString();\n  }\n}`,
+  styles: `<style>\n/* Light-DOM selectors stay contained by convention. */\nproduct-card article { border: 1px solid #ddd; }\nproduct-card h2 { font-size: 1.2rem; }\n</style>\n\n<script lang="ts">\nexport default class extends HTMLElement {\n  static tag = 'product-card';\n  // Add static shadow = true for physical isolation.\n}\n<\/script>`,
+  routes: `<${'route'} path="/guides" methods="GET" />\n<${'route'} path="/guide/:slug" methods="GET" prerender="guides" />\n<${'route'} path="/account/:id" methods="GET" prerender="skip" />\n<${'route'} redirect="/guides" method="301" />`,
+  reactivity: `import { realtimeValue } from '/src/runtime/index.ts';\n\nexport default class extends HTMLElement {\n  static tag = 'shared-counter';\n  count = realtimeValue('demo/count', 0);\n\n  increment = () => this.count.update(value => value + 1);\n}\n\n// In the template: Shared count: {{count}}`
+};
+
+export default class extends HTMLElement {
+  static tag = 'sfc-basics-page';
+  connectedCallback() { Promise.resolve().then(() => this.querySelectorAll('[data-snippet]').forEach(node => { node.textContent = snippets[node.getAttribute('data-snippet')]; })); }
+}
+</script>
+<route path="/basics" methods="GET" />

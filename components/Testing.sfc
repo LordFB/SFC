@@ -1,10 +1,10 @@
 <template>
   <main class="lab">
     <header class="topbar">
-      <a class="brand" href="/shop/"><span class="brand-mark">S</span><span>SFC LABS</span></a>
+      <a class="brand" href="/basics"><span class="brand-mark">S</span><span>SFC LABS</span></a>
       <div class="topbar-actions">
         <span class="connection"><i></i> REALTIME ONLINE</span>
-        <a class="back-link" href="/shop/">Back to shop</a>
+        <a class="back-link" href="/basics">Back to docs</a>
       </div>
     </header>
 
@@ -746,4 +746,4 @@ footer b { color: #687168; }
 @media (prefers-reduced-motion: reduce) { .connection i { animation: none; } }
 </style>
 
-<route path="/testing" methods="GET" />
+<route path="/stress-testing" methods="GET" />

@@ -20,6 +20,7 @@ import zlib from 'zlib';
 import { createHash } from 'crypto';
 import { createShopApi } from './shop-api.js';
 import { createRealtimeService } from './realtime-db.js';
+import { extractComponentTag } from './src/sfc-metadata.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -386,10 +387,7 @@ function getRoutes() {
             const scriptMatch = content.match(/<script[\s\S]*?>([\s\S]*?)<\/script>/i);
             if (scriptMatch) {
               const script = scriptMatch[1];
-              const tagMatch = script.match(/(?:static\s+)?tag\s*[=:]\s*['"`]([^'"`]+)['"`]/);
-              if (tagMatch) {
-                attrs.tag = tagMatch[1];
-              }
+              attrs.tag = extractComponentTag(script) || undefined;
             }
             let p = attrs.path;
             const componentName = file.replace('.sfc', '').toLowerCase();
@@ -669,6 +667,21 @@ async function handleRequest(req, res) {
     // Security: prevent directory traversal
     const safePath = path.normalize(urlPath).replace(/^(\.\.[\/\\])+/, '');
     let filePath = path.join(__dirname, safePath);
+    const webPath = safePath.replace(/\\/g, '/');
+
+    // Self-host the Monaco AMD distribution used by the documentation playground.
+    // Keep the mapping narrowly rooted instead of exposing node_modules generally.
+    if (webPath.startsWith('/vendor/monaco/')) {
+      const monacoRoot = path.resolve(__dirname, 'node_modules', 'monaco-editor', 'min');
+      const relativeMonacoPath = webPath.slice('/vendor/monaco/'.length);
+      const candidate = path.resolve(monacoRoot, relativeMonacoPath);
+      if (!candidate.startsWith(monacoRoot + path.sep)) {
+        res.writeHead(403, { 'Content-Type': 'text/plain' });
+        res.end('Forbidden');
+        return;
+      }
+      filePath = candidate;
+    }
     
     // Try to resolve extensionless imports to actual files
     if (!path.extname(urlPath)) {
@@ -726,7 +739,7 @@ async function handleRequest(req, res) {
     // Check if file exists - SPA fallback only for non-source paths
     if (!fs.existsSync(filePath)) {
       // If it's a source file request that doesn't exist, return 404
-      if (safePath.startsWith('/src/') || safePath.startsWith('/components/') || safePath.startsWith('/node_modules/')) {
+      if (safePath.startsWith('/src/') || safePath.startsWith('/components/') || safePath.startsWith('/node_modules/') || webPath.startsWith('/vendor/monaco/')) {
         res.writeHead(404, { 'Content-Type': 'text/plain' });
         res.end(`Not Found: ${safePath}`);
         return;

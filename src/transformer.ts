@@ -1,6 +1,7 @@
 import MagicString from 'magic-string';
 import fs from 'fs';
 import path from 'path';
+import { extractComponentTag } from './sfc-metadata.js';
 
 // Pre-compiled regex patterns for performance (compile once, reuse many times)
 const TEMPLATE_RE = /<template[^>]*>([\s\S]*?)<\/template>/i;
@@ -10,7 +11,6 @@ const ROUTE_RE = /<route([^>]*)>([\s\S]*?)<\/route>/i;
 const ROUTE_SELF_CLOSE_RE = /<route([^>]*)\s*\/?>/i;
 const ATTR_RE = /([a-zA-Z0-9-:]+)\s*=\s*"([^"]*)"/g;
 const PARAM_RE = /:([a-zA-Z_][a-zA-Z0-9_]*)/g;
-const TAG_RE = /(?:static\s+)?tag\s*[=:]\s*['"`]([^'"`]+)['"`]/;
 const DASHED_TAG_RE = /<([a-z][a-z0-9-]*)[\s/>]/gi;
 const STYLE_GLOBAL_RE = /<style([^>]*)>([\s\S]*?)<\/style>/gi;
 const LANG_RE = /lang\s*=\s*(?:"([^"]+)"|'([^']+)'|([^\s>]+))/i;
@@ -46,8 +46,8 @@ function getTagToPathMap(): Record<string, string> {
       const content = fs.readFileSync(full, 'utf8');
       const scriptMatch = content.match(/<script[\s\S]*?>([\s\S]*?)<\/script>/i);
       const script = scriptMatch ? scriptMatch[1] : '';
-      const tagMatch = script.match(/(?:static\s+)?tag\s*[=:]\s*['"`]([^'"`]+)['"`]/);
-      if (tagMatch) map[tagMatch[1]] = full;
+      const tag = extractComponentTag(script);
+      if (tag) map[tag] = full;
       // heuristic: site-nav -> components/site/Nav.sfc
       const base = path.basename(file, '.sfc');
       const rel = path.relative(componentsDir, full).replace(/\\/g, '/');
@@ -110,9 +110,9 @@ export async function transformSFC(code: string, id: string) {
     } else {
       // try to infer tag from script if not provided; mark handlerOnly when absent
       if (!attrs.tag) {
-        const scriptTagMatch = script.match(TAG_RE);
-        if (scriptTagMatch) {
-          attrs.tag = scriptTagMatch[1];
+        const scriptTag = extractComponentTag(script);
+        if (scriptTag) {
+          attrs.tag = scriptTag;
         } else {
           attrs.handlerOnly = 'true';
         }

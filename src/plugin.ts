@@ -10,6 +10,7 @@ import generate from '@babel/generator';
 import * as t from '@babel/types';
 import ts from 'typescript';
 import { getTransformCache, TransformCache } from './cache';
+import { extractComponentTag } from './sfc-metadata.js';
 
 export interface SfcPluginOptions {
   /** Enable production-like optimizations in dev */
@@ -88,11 +89,7 @@ export default function sfcPlugin(options: SfcPluginOptions = {}): Plugin {
               const scriptMatch = content.match(/<script[\s\S]*?>([\s\S]*?)<\/script>/i);
               if (scriptMatch) {
                 const script = scriptMatch[1];
-                // Match both object syntax (tag: 'name') and class syntax (static tag = 'name')
-                const tagMatch = script.match(/(?:static\s+)?tag\s*[=:]\s*['"`]([^'"`]+)['"`]/);
-                if (tagMatch) {
-                  attrs.tag = tagMatch[1];
-                }
+                attrs.tag = extractComponentTag(script) || undefined;
               }
               let p = attrs.path;
               const componentName = file.replace('.sfc', '').toLowerCase();
