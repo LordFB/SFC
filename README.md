@@ -36,21 +36,19 @@ npm run build
 npm run serve:preview
 ```
 
-Preview mode serves the production output on loopback without requiring public
-authentication configuration. A real production process fails closed unless
-the relying-party settings are supplied:
+Preview mode serves the production output on loopback. A production process
+uses the same built assets and binds according to `HOST` and `PORT`:
 
 ```bash
-AUTH_ORIGIN=https://docs.example.com \
-AUTH_RP_ID=docs.example.com \
+HOST=0.0.0.0 PORT=5173 \
 npm run serve
 ```
 
 PowerShell:
 
 ```powershell
-$env:AUTH_ORIGIN = 'https://docs.example.com'
-$env:AUTH_RP_ID = 'docs.example.com'
+$env:HOST = '0.0.0.0'
+$env:PORT = '5173'
 npm run serve
 ```
 
@@ -88,11 +86,11 @@ the current URL.
 
 ## Realtime values
 
-`realtimeValue()` connects an SFC field to a persistent SQLite key. Realtime
-reads, subscriptions, and writes require an authenticated `HttpOnly` session.
-Keys are cryptographically namespaced by user on the server, and mutations use
-the same exact-origin CSRF protection as the shop API. Subscribers receive
-versioned updates and the component unsubscribes during teardown.
+`realtimeValue()` connects an SFC field to a persistent SQLite key. This
+showcase exposes only the `testing/showcase/*` and `testing/benchmark/*`
+namespaces in production. Mutations require an exact same-origin request;
+subscribers receive versioned updates and components unsubscribe during
+teardown.
 
 ## Data adapters
 
@@ -126,12 +124,11 @@ instead and do not write SQLite files into the function filesystem.
 
 The production server serves the living documentation with CSP, HSTS,
 clickjacking protection, referrer and permissions policies, request timeouts,
-and connection limits. Mutable shop and realtime demonstration services are
-disabled by default; setting `ENABLE_DEMO_SERVICES=true` deliberately enables
-their strict sessions, CSRF validation, cleanup, and authenticated isolation.
-Terminate TLS at a trusted reverse proxy and keep `AUTH_ORIGIN` identical to the
-public HTTPS origin. The development server binds to loopback unless `DEV_HOST`
-is explicitly configured.
+and connection limits. Mutable realtime demonstration services are disabled by
+default; setting `ENABLE_DEMO_SERVICES=true` enables only the public testing
+namespaces with same-origin write protection. Terminate TLS at a trusted reverse
+proxy. The development server binds to loopback unless `DEV_HOST` is explicitly
+configured.
 
 See [SECURITY.md](SECURITY.md) for deployment controls and the one-time Git
 history cleanup required for older checkouts.
@@ -139,7 +136,7 @@ history cleanup required for older checkouts.
 ## Commands
 
 ```bash
-npm test             # framework, API, auth, realtime, and concurrency tests
+npm test             # framework, adapters, realtime, and concurrency tests
 npm run build        # validate routes and emit dist/public
 npm run serve:dev    # transform components on demand
 npm run serve:preview

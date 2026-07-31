@@ -10,7 +10,11 @@ const MAX_CLIENT_QUEUE_BYTES = 1024 * 1024;
 const MAX_CLIENTS = 1000;
 const MAX_CLIENTS_PER_SCOPE = 10;
 const POLL_INTERVAL_MS = 50;
-const PUBLIC_DEMO_PREFIXES = Object.freeze(['testing/showcase/', 'testing/benchmark/']);
+const PUBLIC_DEMO_PREFIXES = Object.freeze([
+  'docs/advanced/',
+  'testing/showcase/',
+  'testing/benchmark/',
+]);
 const PUBLIC_DEMO_SCOPE = 'public-testing-demos';
 
 export class RealtimeConflictError extends Error {

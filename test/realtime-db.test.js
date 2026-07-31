@@ -238,6 +238,14 @@ test('allows testing demo namespaces without authentication but protects all oth
     assert.equal(benchmarkWrite.status, 200);
     assert.equal((await read(running.url, 'testing/benchmark/latency')).body.value.value, 12);
 
+    const advancedWrite = await fetch(`${running.url}/__sfc/realtime/value`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', Origin: running.url },
+      body: JSON.stringify({ key: 'docs/advanced/count', value: 3 }),
+    });
+    assert.equal(advancedWrite.status, 200);
+    assert.equal((await read(running.url, 'docs/advanced/count')).body.value.value, 3);
+
     const crossOriginWrite = await fetch(`${running.url}/__sfc/realtime/value`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', Origin: 'https://attacker.invalid' },

@@ -1,6 +1,6 @@
 /**
- * Production server — standalone Express app that serves the built frontend
- * and handles shop API + SFC POST routes.
+ * Production server — standalone HTTP app that serves the built frontend
+ * and the optional public realtime demonstration endpoints.
  *
  * Usage:
  *   npm run build        # build frontend into dist/public/
@@ -77,7 +77,6 @@ function compress(buf, acceptEncoding) {
   return { content: buf, encoding: null };
 }
 
-// ─── shop API handler (identical logic to shop-api-server.js) ────────
 // ─── Static file cache (in memory) ──────────────────────────────────
 const fileCache = new Map();
 

@@ -1,6 +1,10 @@
 const REALTIME_VALUE = Symbol('sfc.realtime-value');
 const DEFAULT_ENDPOINT = '/__sfc/realtime';
-const PUBLIC_DEMO_PREFIXES = ['testing/showcase/', 'testing/benchmark/'] as const;
+const PUBLIC_DEMO_PREFIXES = [
+  'docs/advanced/',
+  'testing/showcase/',
+  'testing/benchmark/',
+] as const;
 const IS_DEVELOPMENT = Boolean((import.meta as ImportMeta & { env?: { DEV?: boolean } }).env?.DEV)
   || (typeof location !== 'undefined' && ['localhost', '127.0.0.1', '::1'].includes(location.hostname));
 

@@ -33,7 +33,9 @@ test('plain class fields drive template bindings in the runtime and playground',
 test('public realtime demos bypass shop authentication in production', () => {
   const runtime = readFileSync(new URL('../src/runtime/realtime.ts', import.meta.url), 'utf8');
 
-  assert.match(runtime, /'testing\/showcase\/', 'testing\/benchmark\/'/, 'client and server must agree on public demo namespaces');
+  for (const namespace of ['docs/advanced/', 'testing/showcase/', 'testing/benchmark/']) {
+    assert.ok(runtime.includes(`'${namespace}'`), `runtime should expose ${namespace}`);
+  }
   assert.match(runtime, /if \(IS_DEVELOPMENT \|\| isPublicDemoKey\(this\.key\)\)/, 'public demo writes should use direct same-origin fetch');
   assert.match(runtime, /keys\.filter\(isPublicDemoKey\)/, 'production subscriptions should expose only public demo keys');
   assert.doesNotMatch(runtime, /shopAuth|auth\/session/, 'realtime must not depend on the removed shop authentication client');
