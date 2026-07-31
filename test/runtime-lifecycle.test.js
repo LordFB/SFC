@@ -42,3 +42,13 @@ test('template directives bind component calls and instance hover styles without
   assert.match(playground, /@Hover="\{color:red; transition:all 1s;\}"/, 'playground should demonstrate CSS-style hover declarations');
   assert.match(runtime, /splitTopLevel\(object\[1\], ',;'\)/, 'hover CSS should accept comma and semicolon declaration separators');
 });
+
+test('playground delegates SFC blocks to Monaco native language tokenizers', () => {
+  const playground = readFileSync(new URL('../components/docs/Playground.sfc', import.meta.url), 'utf8');
+
+  for (const language of ['html', 'javascript', 'typescript', 'css', 'scss']) {
+    assert.match(playground, new RegExp(`nextEmbedded:'${language}'`), `playground should embed Monaco ${language} highlighting`);
+  }
+  assert.match(playground, /token:'@rematch'.*nextEmbedded:'@pop'/, 'closing SFC blocks should return to the outer tokenizer');
+  assert.match(playground, /token:'tag\.sfc'/, 'SFC block boundaries should retain distinct highlighting');
+});

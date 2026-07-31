@@ -86,8 +86,29 @@ export default class extends HTMLElement {
   private createEditor(monaco: any) {
     if (this.editor || !this.isConnected) return;
     monaco.languages.register({ id: 'sfc' });
-    monaco.languages.setMonarchTokensProvider('sfc', { tokenizer: { root: [[/<\/?(template|script|style|route)/, 'tag'], [/[{}]/, 'delimiter.bracket'], [/\b(class|extends|static|export|default|const|let|return|async|await|import|from|new)\b/, 'keyword'], [/'[^']*'|"[^"]*"|`[^`]*`/, 'string'], [/\/\/.*$/, 'comment'], [/\d+/, 'number']] } });
-    monaco.editor.defineTheme('sfc-night', { base:'vs-dark', inherit:true, rules:[{token:'tag',foreground:'C4FF4D',fontStyle:'bold'},{token:'keyword',foreground:'8EDCFF'},{token:'string',foreground:'CE9178'}], colors:{'editor.background':'#090b09','editorLineNumber.foreground':'#414941','editorLineNumber.activeForeground':'#C4FF4D','editorCursor.foreground':'#C4FF4D','editor.selectionBackground':'#34432788'} });
+    monaco.languages.setMonarchTokensProvider('sfc', {
+      defaultToken: '',
+      tokenizer: {
+        root: [
+          [/<[t]emplate\b[^>]*>/i, { token:'tag.sfc', next:'@template', nextEmbedded:'html' }],
+          [/<[s]cript\b(?=[^>]*\blang\s*=\s*["'](?:ts|typescript)["'])[^>]*>/i, { token:'tag.sfc', next:'@script', nextEmbedded:'typescript' }],
+          [/<[s]cript\b[^>]*>/i, { token:'tag.sfc', next:'@script', nextEmbedded:'javascript' }],
+          [/<[s]tyle\b(?=[^>]*\blang\s*=\s*["']scss["'])[^>]*>/i, { token:'tag.sfc', next:'@style', nextEmbedded:'scss' }],
+          [/<[s]tyle\b[^>]*>/i, { token:'tag.sfc', next:'@style', nextEmbedded:'css' }],
+          [/<[r]oute\b[^>]*\/>/i, 'tag.sfc'],
+          [/<[r]oute\b[^>]*>/i, { token:'tag.sfc', next:'@route', nextEmbedded:'html' }],
+          [/<\/(?:template|script|style|route)\s*>/i, 'tag.sfc'],
+          [/\s+/, 'white'],
+          [/./, 'invalid']
+        ],
+        template: [[/<\/template/, { token:'@rematch', next:'@pop', nextEmbedded:'@pop' }]],
+        script: [[/<\/script/, { token:'@rematch', next:'@pop', nextEmbedded:'@pop' }]],
+        style: [[/<\/style/, { token:'@rematch', next:'@pop', nextEmbedded:'@pop' }]],
+        route: [[/<\/route/, { token:'@rematch', next:'@pop', nextEmbedded:'@pop' }]]
+      }
+    });
+    monaco.languages.setLanguageConfiguration('sfc', { brackets:[['<','>'],['{','}'],['[',']'],['(',')']], autoClosingPairs:[{open:'<',close:'>'},{open:'{',close:'}'},{open:'[',close:']'},{open:'(',close:')'},{open:'"',close:'"'},{open:"'",close:"'"}] });
+    monaco.editor.defineTheme('sfc-night', { base:'vs-dark', inherit:true, rules:[{token:'tag.sfc',foreground:'C4FF4D',fontStyle:'bold'},{token:'invalid',foreground:'E26E5D'}], colors:{'editor.background':'#090b09','editorLineNumber.foreground':'#414941','editorLineNumber.activeForeground':'#C4FF4D','editorCursor.foreground':'#C4FF4D','editor.selectionBackground':'#34432788','editorIndentGuide.background1':'#202720','editorIndentGuide.activeBackground1':'#53634B'} });
     const host=this.querySelector('#editor') as HTMLElement; const fallback=this.querySelector('#editor-fallback') as HTMLTextAreaElement;
     this.editor=monaco.editor.create(host,{value:fallback.value,language:'sfc',theme:'sfc-night',fontSize:13,lineHeight:21,fontFamily:'SFMono-Regular, Consolas, monospace',minimap:{enabled:false},automaticLayout:true,scrollBeyondLastLine:false,padding:{top:14},tabSize:2});
     fallback.hidden=true; this.editor.onDidChangeModelContent(this.scheduleCompile); this.editor.onDidChangeCursorPosition((e:any)=>{ const el=this.querySelector('#position'); if(el) el.textContent=`Ln ${e.position.lineNumber}, Col ${e.position.column}`; });
