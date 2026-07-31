@@ -1,4 +1,6 @@
 import Database from 'better-sqlite3';
+import { createHash } from 'crypto';
+import fs from 'fs';
 import path from 'path';
 
 const DEFAULT_PREFIX = '/__sfc/realtime';
@@ -6,6 +8,8 @@ const MAX_KEY_LENGTH = 256;
 const MAX_CHANNELS = 100;
 const MAX_BODY_BYTES = 64 * 1024;
 const MAX_CLIENT_QUEUE_BYTES = 1024 * 1024;
+const MAX_CLIENTS = 1000;
+const MAX_CLIENTS_PER_SCOPE = 10;
 const POLL_INTERVAL_MS = 50;
 
 export class RealtimeConflictError extends Error {
@@ -30,19 +34,9 @@ function encodeEvent(event) {
   return `id: ${event.sequence}\nevent: value\ndata: ${JSON.stringify(event)}\n\n`;
 }
 
-function requestOriginIsAllowed(req) {
-  const origin = req.headers.origin;
-  if (!origin) return true;
-  const forwardedHost = String(req.headers['x-forwarded-host'] || '').split(',')[0].trim();
-  const host = forwardedHost || req.headers.host;
-  if (!host) return false;
-  const forwardedProto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim();
-  const protocol = forwardedProto || (req.socket?.encrypted ? 'https' : 'http');
-  try {
-    return new URL(origin).origin === `${protocol}://${host}`;
-  } catch {
-    return false;
-  }
+function scopedKey(scope, key) {
+  const digest = createHash('sha256').update(String(scope)).digest('base64url');
+  return `${digest}:${createHash('sha256').update(key).digest('base64url')}`;
 }
 
 async function readJson(req) {
@@ -77,7 +71,9 @@ function sendJson(res, status, value) {
 }
 
 export function createRealtimeDatabase(options = {}) {
-  const filename = options.filename || process.env.REALTIME_DB_PATH || path.resolve('realtime.db');
+  const dataDirectory = process.env.SFC_DATA_DIR ? path.resolve(process.env.SFC_DATA_DIR) : path.resolve('.data');
+  const filename = options.filename || process.env.REALTIME_DB_PATH || path.join(dataDirectory, 'realtime.db');
+  fs.mkdirSync(path.dirname(filename), { recursive: true });
   const db = new Database(filename);
   db.pragma('journal_mode = WAL');
   db.pragma('synchronous = NORMAL');
@@ -205,6 +201,7 @@ export function createRealtimeService(options = {}) {
   const prefix = options.prefix || DEFAULT_PREFIX;
   const clients = new Set();
   const clientsByKey = new Map();
+  const clientsByScope = new Map();
   const locallyPublished = new Set();
   let lastSequence = database.maxSequence();
   let closed = false;
@@ -214,6 +211,9 @@ export function createRealtimeService(options = {}) {
     if (client.closed) return;
     client.closed = true;
     clients.delete(client);
+    const scopedClients = clientsByScope.get(client.scope);
+    scopedClients?.delete(client);
+    if (scopedClients?.size === 0) clientsByScope.delete(client.scope);
     for (const key of client.keys) {
       const subscribers = clientsByKey.get(key);
       subscribers?.delete(client);
@@ -253,8 +253,10 @@ export function createRealtimeService(options = {}) {
 
   function publish(event, local = false) {
     if (local) locallyPublished.add(event.sequence);
-    const message = encodeEvent(event);
-    for (const client of clientsByKey.get(event.key) || []) writeClient(client, message);
+    for (const client of clientsByKey.get(event.key) || []) {
+      const publicKey = client.publicKeys.get(event.key);
+      if (publicKey) writeClient(client, encodeEvent({ ...event, key: publicKey }));
+    }
   }
 
   function poll() {
@@ -288,6 +290,7 @@ export function createRealtimeService(options = {}) {
   async function handler(req, res, requestUrl) {
     const url = requestUrl || new URL(req.url, `http://${req.headers.host || 'localhost'}`);
     if (!url.pathname.startsWith(prefix)) return false;
+    let responseKey = null;
 
     try {
       if (req.method === 'GET' && url.pathname === `${prefix}/events`) {
@@ -296,15 +299,29 @@ export function createRealtimeService(options = {}) {
           sendJson(res, 400, { error: `Subscribe to between 1 and ${MAX_CHANNELS} keys` });
           return true;
         }
+        const authorization = await options.authorize?.(req, 'read', keys);
+        if (!authorization?.scope) {
+          sendJson(res, 401, { error: 'Authentication required' });
+          return true;
+        }
+        const scope = String(authorization.scope);
+        const scopeClients = clientsByScope.get(scope) || new Set();
+        if (clients.size >= (options.maxClients || MAX_CLIENTS) || scopeClients.size >= (options.maxClientsPerScope || MAX_CLIENTS_PER_SCOPE)) {
+          sendJson(res, 429, { error: 'Too many realtime connections' });
+          return true;
+        }
+        const publicKeys = new Map(keys.map(key => [scopedKey(scope, key), key]));
         res.writeHead(200, {
           'Content-Type': 'text/event-stream',
           'Cache-Control': 'no-cache, no-transform',
           'Connection': 'keep-alive',
           'X-Accel-Buffering': 'no'
         });
-        const client = { res, keys: new Set(keys), queue: [], queueBytes: 0, blocked: false, closed: false };
+        const client = { res, scope, publicKeys, keys: new Set(publicKeys.keys()), queue: [], queueBytes: 0, blocked: false, closed: false };
         clients.add(client);
-        for (const key of keys) {
+        scopeClients.add(client);
+        clientsByScope.set(scope, scopeClients);
+        for (const key of client.keys) {
           let subscribers = clientsByKey.get(key);
           if (!subscribers) clientsByKey.set(key, subscribers = new Set());
           subscribers.add(client);
@@ -314,35 +331,44 @@ export function createRealtimeService(options = {}) {
         client.blocked = !res.write(': connected\n\n');
         // Registration happens before these synchronous reads, so a write cannot
         // fall into a snapshot/subscription gap.
-        for (const key of keys) {
+        for (const key of client.keys) {
           const current = database.get(key);
-          if (current) writeClient(client, `event: value\ndata: ${JSON.stringify(current)}\n\n`);
+          if (current) writeClient(client, `event: value\ndata: ${JSON.stringify({ ...current, key: publicKeys.get(key) })}\n\n`);
         }
         return true;
       }
 
       if (req.method === 'GET' && url.pathname === `${prefix}/value`) {
-        const current = database.get(validateKey(url.searchParams.get('key')));
-        sendJson(res, 200, { value: current });
+        const key = validateKey(url.searchParams.get('key'));
+        const authorization = await options.authorize?.(req, 'read', [key]);
+        if (!authorization?.scope) {
+          sendJson(res, 401, { error: 'Authentication required' });
+          return true;
+        }
+        const current = database.get(scopedKey(authorization.scope, key));
+        sendJson(res, 200, { value: current ? { ...current, key } : null });
         return true;
       }
 
       if ((req.method === 'PUT' || req.method === 'DELETE') && url.pathname === `${prefix}/value`) {
-        if (!requestOriginIsAllowed(req)) {
-          sendJson(res, 403, { error: 'Cross-origin realtime writes are not allowed' });
+        const authorization = await options.authorize?.(req, 'write');
+        if (!authorization?.scope) {
+          sendJson(res, 401, { error: 'Authentication required' });
           return true;
         }
         const body = await readJson(req);
+        const key = validateKey(body.key);
+        responseKey = key;
         const expectedVersion = body.expectedVersion;
         if (expectedVersion !== undefined && (!Number.isSafeInteger(expectedVersion) || expectedVersion < 0)) {
           sendJson(res, 400, { error: 'expectedVersion must be a non-negative integer' });
           return true;
         }
         const event = req.method === 'DELETE'
-          ? database.delete(body.key, expectedVersion)
-          : database.set(body.key, body.value, expectedVersion);
+          ? database.delete(scopedKey(authorization.scope, key), expectedVersion)
+          : database.set(scopedKey(authorization.scope, key), body.value, expectedVersion);
         publish(event, true);
-        sendJson(res, 200, { value: event });
+        sendJson(res, 200, { value: { ...event, key } });
         return true;
       }
 
@@ -350,10 +376,14 @@ export function createRealtimeService(options = {}) {
       return true;
     } catch (error) {
       if (error instanceof RealtimeConflictError) {
-        sendJson(res, 409, { error: error.message, current: error.current });
+        sendJson(res, 409, {
+          error: error.message,
+          current: error.current && responseKey ? { ...error.current, key: responseKey } : error.current,
+        });
       } else {
-        sendJson(res, error.statusCode || (error instanceof TypeError ? 400 : 500), {
-          error: error.statusCode || error instanceof TypeError ? error.message : 'Internal Server Error'
+        const status = error.statusCode || error.status || (error instanceof TypeError ? 400 : 500);
+        sendJson(res, status, {
+          error: status < 500 ? error.message : 'Internal Server Error'
         });
       }
       return true;
@@ -364,7 +394,7 @@ export function createRealtimeService(options = {}) {
     database,
     handler,
     stats() {
-      return { clients: clients.size, subscriptions: clientsByKey.size, lastSequence };
+      return { clients: clients.size, scopes: clientsByScope.size, subscriptions: clientsByKey.size, lastSequence };
     },
     close() {
       if (closed) return;

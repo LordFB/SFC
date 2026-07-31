@@ -13,7 +13,15 @@ import {
 const testDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'sfc-realtime-'));
 
 function startService(filename, options = {}) {
-  const service = createRealtimeService({ filename, pollInterval: 10, ...options });
+  const authorize = options.authorize || ((req, operation) => {
+    if (operation === 'write' && req.headers.origin === 'https://attacker.invalid') {
+      const error = new Error('Cross-origin realtime writes are not allowed');
+      error.status = 403;
+      throw error;
+    }
+    return { scope: req.headers['x-test-user'] || 'test-user' };
+  });
+  const service = createRealtimeService({ filename, pollInterval: 10, ...options, authorize });
   const server = http.createServer(async (req, res) => {
     await service.handler(req, res);
   });
@@ -42,6 +50,13 @@ async function write(baseUrl, key, value, expectedVersion) {
       value,
       ...(expectedVersion === undefined ? {} : { expectedVersion })
     })
+  });
+  return { status: response.status, body: await response.json() };
+}
+
+async function read(baseUrl, key, user = 'test-user') {
+  const response = await fetch(`${baseUrl}/__sfc/realtime/value?key=${encodeURIComponent(key)}`, {
+    headers: { 'X-Test-User': user }
   });
   return { status: response.status, body: await response.json() };
 }
@@ -112,7 +127,7 @@ test('persists JSON values and enforces atomic compare-and-set versions', () => 
 });
 
 test('fans out hundreds of concurrent writes to every subscriber in order', { timeout: 20_000 }, async () => {
-  const running = await startService(path.join(testDirectory, 'fanout.db'));
+  const running = await startService(path.join(testDirectory, 'fanout.db'), { maxClientsPerScope: 20 });
   try {
     const subscriberCount = 16;
     const writeCount = 400;
@@ -135,7 +150,7 @@ test('fans out hundreds of concurrent writes to every subscriber in order', { ti
         assert.ok(events[index].version > events[index - 1].version);
       }
     }
-    assert.equal(running.service.database.get('load/counter').version, writeCount);
+    assert.equal((await read(running.url, 'load/counter')).body.value.version, writeCount);
   } finally {
     await running.close();
   }
@@ -149,7 +164,7 @@ test('allows only one winner when concurrent clients target the same version', a
     );
     assert.equal(attempts.filter(result => result.status === 200).length, 1);
     assert.equal(attempts.filter(result => result.status === 409).length, 99);
-    assert.equal(running.service.database.get('cas/key').version, 1);
+    assert.equal((await read(running.url, 'cas/key')).body.value.version, 1);
   } finally {
     await running.close();
   }
@@ -186,6 +201,31 @@ test('rejects cross-origin writes and oversized subscription sets', async () => 
     for (let index = 0; index < 101; index++) query.append('key', `key-${index}`);
     const tooMany = await fetch(`${running.url}/__sfc/realtime/events?${query}`);
     assert.equal(tooMany.status, 400);
+  } finally {
+    await running.close();
+  }
+});
+
+test('denies realtime access without an authorization policy', async () => {
+  const running = await startService(path.join(testDirectory, 'unauthorized.db'), { authorize: async () => null });
+  try {
+    assert.equal((await read(running.url, 'private/key')).status, 401);
+    assert.equal((await write(running.url, 'private/key', 'value')).status, 401);
+  } finally {
+    await running.close();
+  }
+});
+
+test('isolates identical realtime keys between authenticated scopes', async () => {
+  const running = await startService(path.join(testDirectory, 'scopes.db'));
+  try {
+    const aliceWrite = await fetch(`${running.url}/__sfc/realtime/value`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-Test-User': 'alice' },
+      body: JSON.stringify({ key: 'shared/name', value: 'alice-value' })
+    });
+    assert.equal(aliceWrite.status, 200);
+    assert.equal((await read(running.url, 'shared/name', 'alice')).body.value.value, 'alice-value');
+    assert.equal((await read(running.url, 'shared/name', 'bob')).body.value, null);
   } finally {
     await running.close();
   }

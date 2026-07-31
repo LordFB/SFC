@@ -18,16 +18,31 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import zlib from 'zlib';
 import { createHash } from 'crypto';
-import { createShopApi } from './shop-api.js';
-import { createRealtimeService } from './realtime-db.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const PREVIEW_MODE = process.argv.includes('--preview');
+const DEMO_SERVICES_ENABLED = PREVIEW_MODE || process.env.ENABLE_DEMO_SERVICES === 'true';
 const HOST = PREVIEW_MODE ? '127.0.0.1' : process.env.HOST;
 const STATIC_DIR = path.join(__dirname, 'dist', 'public');
-const shopApiHandler = createShopApi({ production: !PREVIEW_MODE, port: PORT });
-const realtimeService = createRealtimeService();
+let shopApiHandler = null;
+let realtimeService = null;
+if (DEMO_SERVICES_ENABLED) {
+  const [{ createShopApi }, { createRealtimeService }] = await Promise.all([
+    import('./shop-api.js'), import('./realtime-db.js'),
+  ]);
+  shopApiHandler = createShopApi({ production: !PREVIEW_MODE, port: PORT });
+  realtimeService = createRealtimeService({ authorize: shopApiHandler.authorizeRealtime });
+}
+const SECURITY_HEADERS = {
+  'Content-Security-Policy': "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://picsum.photos; connect-src 'self'; font-src 'self' data:; worker-src 'self' blob:; frame-src 'self'",
+  'Cross-Origin-Opener-Policy': 'same-origin',
+  'Cross-Origin-Resource-Policy': 'same-origin',
+  'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), payment=(), usb=()',
+  'Referrer-Policy': 'strict-origin-when-cross-origin',
+  'X-Content-Type-Options': 'nosniff',
+  'X-Frame-Options': 'DENY',
+};
 
 // ─── MIME types ──────────────────────────────────────────────────────
 const MIME = {
@@ -74,7 +89,7 @@ function serveStatic(filePath, req, res) {
     const stat = fs.statSync(filePath);
     if (stat.isDirectory()) return false;
     const buf = fs.readFileSync(filePath);
-    entry = { buf, etag: etag(buf) };
+    entry = { buf, etag: etag(buf), compressed: new Map() };
     fileCache.set(filePath, entry);
   }
   if (req.headers['if-none-match'] === entry.etag) {
@@ -87,11 +102,18 @@ function serveStatic(filePath, req, res) {
   const isHashed = /[-\.][a-zA-Z0-9]{6,}\.(js|css)$/.test(filePath);
   const cacheControl = isHashed ? 'public, max-age=31536000, immutable' : 'public, max-age=0, must-revalidate';
   const ae = req.headers['accept-encoding'] || '';
-  const { content, encoding } = compress(entry.buf, ae);
+  const preferredEncoding = ae.includes('br') ? 'br' : ae.includes('gzip') ? 'gzip' : 'identity';
+  let compressed = entry.compressed.get(preferredEncoding);
+  if (!compressed) {
+    compressed = compress(entry.buf, preferredEncoding === 'identity' ? '' : preferredEncoding);
+    entry.compressed.set(preferredEncoding, compressed);
+  }
+  const { content, encoding } = compressed;
   const headers = { 'Content-Type': mime, 'ETag': entry.etag, 'Cache-Control': cacheControl };
+  headers.Vary = 'Accept-Encoding';
   if (encoding) headers['Content-Encoding'] = encoding;
   res.writeHead(200, headers);
-  res.end(content);
+  res.end(req.method === 'HEAD' ? undefined : content);
   return true;
 }
 
@@ -106,16 +128,30 @@ function getIndex() {
 
 // ─── main request handler ────────────────────────────────────────────
 async function handle(req, res) {
+  for (const [name, value] of Object.entries(SECURITY_HEADERS)) res.setHeader(name, value);
+  if (!PREVIEW_MODE) res.setHeader('Strict-Transport-Security', 'max-age=63072000; includeSubDomains; preload');
   const url = new URL(req.url, `http://localhost:${PORT}`);
   const urlPath = url.pathname;
 
-  if (urlPath.startsWith('/__sfc/realtime')) {
+  if (!DEMO_SERVICES_ENABLED && (urlPath.startsWith('/__sfc/realtime') || urlPath.startsWith('/shop/api/'))) {
+    res.writeHead(404, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+    res.end(JSON.stringify({ error: 'Not found' }));
+    return;
+  }
+
+  if (realtimeService && urlPath.startsWith('/__sfc/realtime')) {
     await realtimeService.handler(req, res, url);
     return;
   }
 
-  if (urlPath.startsWith('/shop/api/')) {
+  if (shopApiHandler && urlPath.startsWith('/shop/api/')) {
     await shopApiHandler(req, res);
+    return;
+  }
+
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    res.writeHead(405, { 'Content-Type': 'text/plain; charset=utf-8', 'Allow': 'GET, HEAD' });
+    res.end('Method Not Allowed');
     return;
   }
 
@@ -139,21 +175,22 @@ async function handle(req, res) {
 
   // Prerendered routes live at /route/index.html. Resolve clean URLs to their
   // generated page before using the generic SPA fallback.
-  if (req.method === 'GET' && safePath !== '/') {
+  if ((req.method === 'GET' || req.method === 'HEAD') && safePath !== '/') {
     const routeIndex = path.join(STATIC_DIR, safePath, 'index.html');
     if (serveStatic(routeIndex, req, res)) return;
   }
 
   // SPA fallback — serve index.html for any unmatched GET
-  if (req.method === 'GET') {
+  if (req.method === 'GET' || req.method === 'HEAD') {
     const idx = getIndex();
     if (idx) {
       const ae = req.headers['accept-encoding'] || '';
       const { content, encoding } = compress(idx, ae);
       const headers = { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' };
+      headers.Vary = 'Accept-Encoding';
       if (encoding) headers['Content-Encoding'] = encoding;
       res.writeHead(200, headers);
-      res.end(content);
+      res.end(req.method === 'HEAD' ? undefined : content);
       return;
     }
   }
@@ -169,6 +206,10 @@ if (!fs.existsSync(STATIC_DIR)) {
 }
 
 const server = http.createServer({ keepAlive: true, keepAliveTimeout: 5000 }, handle);
+server.headersTimeout = 15_000;
+server.requestTimeout = 30_000;
+server.maxRequestsPerSocket = 1000;
+server.maxConnections = Number.parseInt(process.env.MAX_CONNECTIONS || '2000', 10);
 server.listen({ port: PORT, ...(HOST ? { host: HOST } : {}) }, () => {
   const displayHost = PREVIEW_MODE ? 'localhost' : (HOST || 'localhost');
   console.log(`
@@ -180,6 +221,6 @@ server.listen({ port: PORT, ...(HOST ? { host: HOST } : {}) }, () => {
 });
 
 process.on('SIGINT', () => {
-  realtimeService.close();
+  realtimeService?.close();
   server.close(() => process.exit(0));
 });

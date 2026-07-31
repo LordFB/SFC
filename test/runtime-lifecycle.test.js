@@ -16,3 +16,29 @@ test('class components receive a mounted and interpolated template before connec
   assert.ok(interpolate > mount, 'route interpolation should follow template mounting');
   assert.ok(userCallback > interpolate, 'user callback should run after the DOM is ready');
 });
+
+test('plain class fields drive template bindings in the runtime and playground', () => {
+  const runtime = readFileSync(new URL('../src/runtime/realtime.ts', import.meta.url), 'utf8');
+  const playground = readFileSync(new URL('../components/docs/Playground.sfc', import.meta.url), 'utf8');
+
+  assert.match(runtime, /localFieldBindings/, 'runtime should track local field binding listeners');
+  assert.match(runtime, /Object\.defineProperty\(owner, token/, 'runtime should observe assignments to bound fields');
+  assert.match(playground, /<output>\{\{ count \}\}<\/output>/, 'playground example should exercise field interpolation');
+
+  const bind = playground.indexOf('this.__bindTemplate();');
+  const userCallback = playground.indexOf('if(super.connectedCallback) super.connectedCallback();');
+  assert.ok(bind >= 0 && userCallback > bind, 'playground should bind its template before user lifecycle code runs');
+});
+
+test('template directives bind component calls and instance hover styles without evaluating code', () => {
+  const runtime = readFileSync(new URL('../src/runtime/directives.ts', import.meta.url), 'utf8');
+  const playground = readFileSync(new URL('../components/docs/Playground.sfc', import.meta.url), 'utf8');
+
+  assert.match(runtime, /name === '@click'/, 'runtime should recognize @Click case-insensitively');
+  assert.match(runtime, /name === '@hover'/, 'runtime should recognize @Hover case-insensitively');
+  assert.match(runtime, /expression\.trim\(\)\.startsWith\('\{'\)/, '@Hover should distinguish CSS objects from component calls');
+  assert.doesNotMatch(runtime, /\beval\s*\(|\bnew Function\b/, 'directives must not evaluate template strings as JavaScript');
+  assert.match(playground, /@Click="update\(-1\)"/, 'playground should demonstrate component method calls');
+  assert.match(playground, /@Hover="\{color:red; transition:all 1s;\}"/, 'playground should demonstrate CSS-style hover declarations');
+  assert.match(runtime, /splitTopLevel\(object\[1\], ',;'\)/, 'hover CSS should accept comma and semicolon declaration separators');
+});

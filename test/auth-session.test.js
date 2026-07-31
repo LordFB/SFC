@@ -207,6 +207,19 @@ test('enforces per-user order ownership and hides unowned or foreign orders', as
   assert.equal(own.data.order.customer_email, 'alice@example.test');
 });
 
+test('rejects unsafe cart quantities before they can affect totals or inventory', async () => {
+  const client = makeClient();
+  await client.bootstrap();
+  for (const quantity of [-2, 1.5, '3', 1001]) {
+    const result = await client.request('/shop/api/cart', {
+      method: 'POST', body: { action: 'add', productId: 1, quantity }
+    });
+    assert.equal(result.response.status, 400);
+  }
+  const cart = await client.request('/shop/api/cart', { method: 'POST', body: { action: 'get' } });
+  assert.equal(cart.data.item_count, 0);
+});
+
 test('registers and logs in with Argon2id passwords while rejecting duplicates', async () => {
   const duplicate = makeClient();
   await duplicate.bootstrap();

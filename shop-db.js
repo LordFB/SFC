@@ -5,12 +5,17 @@
  */
 
 import Database from 'better-sqlite3';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { randomBytes, randomUUID } from 'crypto';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const dbPath = process.env.SHOP_DB_PATH || path.join(__dirname, 'shop.db');
+const dataDirectory = process.env.SFC_DATA_DIR
+  ? path.resolve(process.env.SFC_DATA_DIR)
+  : path.join(__dirname, '.data');
+const dbPath = process.env.SHOP_DB_PATH || path.join(dataDirectory, 'shop.db');
+fs.mkdirSync(path.dirname(dbPath), { recursive: true });
 
 // Initialize database
 const db = new Database(dbPath);
@@ -38,7 +43,7 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     session_id TEXT NOT NULL,
     product_id INTEGER NOT NULL,
-    quantity INTEGER DEFAULT 1,
+    quantity INTEGER NOT NULL DEFAULT 1 CHECK(quantity > 0 AND quantity <= 1000),
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (product_id) REFERENCES products(id),
     UNIQUE(session_id, product_id)
@@ -98,6 +103,16 @@ db.exec(`
     attempts INTEGER NOT NULL,
     blocked_until INTEGER
   );
+
+  CREATE TRIGGER IF NOT EXISTS cart_items_quantity_insert_guard
+  BEFORE INSERT ON cart_items
+  WHEN NEW.quantity <= 0 OR NEW.quantity > 1000 OR typeof(NEW.quantity) != 'integer'
+  BEGIN SELECT RAISE(ABORT, 'invalid cart quantity'); END;
+
+  CREATE TRIGGER IF NOT EXISTS cart_items_quantity_update_guard
+  BEFORE UPDATE OF quantity ON cart_items
+  WHEN NEW.quantity <= 0 OR NEW.quantity > 1000 OR typeof(NEW.quantity) != 'integer'
+  BEGIN SELECT RAISE(ABORT, 'invalid cart quantity'); END;
 `);
 
 const orderColumns = db.prepare('PRAGMA table_info(orders)').all();
@@ -242,6 +257,8 @@ const queries = {
       blocked_until = excluded.blocked_until
   `),
   clearRateLimit: db.prepare('DELETE FROM auth_rate_limits WHERE key = ?'),
+  deleteExpiredRateLimits: db.prepare('DELETE FROM auth_rate_limits WHERE blocked_until IS NULL OR blocked_until < ?'),
+  deleteExpiredSessions: db.prepare('DELETE FROM sessions WHERE expires_at < ? OR (revoked_at IS NOT NULL AND revoked_at < ?)'),
 };
 
 // API functions
@@ -280,6 +297,11 @@ export const shopDb = {
   },
   
   addToCart(sessionId, productId, quantity = 1) {
+    if (!Number.isSafeInteger(quantity) || quantity < 1 || quantity > 1000) {
+      const error = new TypeError('Quantity must be an integer between 1 and 1000');
+      error.status = 400;
+      throw error;
+    }
     const product = queries.getProductById.get(productId);
     if (!product) throw new Error('Product not found');
     if (product.stock < quantity) throw new Error('Insufficient stock');
@@ -289,6 +311,11 @@ export const shopDb = {
   },
   
   updateCartQuantity(sessionId, productId, quantity) {
+    if (!Number.isSafeInteger(quantity) || quantity < 0 || quantity > 1000) {
+      const error = new TypeError('Quantity must be an integer between 0 and 1000');
+      error.status = 400;
+      throw error;
+    }
     if (quantity <= 0) {
       queries.removeFromCart.run(sessionId, productId);
     } else {
@@ -438,6 +465,14 @@ export const shopDb = {
 
   clearRateLimit(key) {
     queries.clearRateLimit.run(key);
+  },
+
+  cleanupSecurityState(now, revokedBefore = now - 24 * 60 * 60 * 1000) {
+    const cleanup = db.transaction(() => ({
+      sessions: queries.deleteExpiredSessions.run(now, revokedBefore).changes,
+      rateLimits: queries.deleteExpiredRateLimits.run(now).changes,
+    }));
+    return cleanup();
   }
 };
 

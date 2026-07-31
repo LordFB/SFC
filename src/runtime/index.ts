@@ -6,6 +6,10 @@ import {
   connectRealtimeComponent,
   disconnectRealtimeComponent
 } from './realtime';
+import {
+  connectTemplateDirectives,
+  disconnectTemplateDirectives
+} from './directives';
 
 export {
   configureImagePreviewCache,
@@ -250,6 +254,7 @@ export function defineComponent(optsOrCtor: any) {
           connectImagePreviewCache(mountRoot);
           connectRealtimeComponent(this as any, mountRoot);
           interpolateTemplate(mountRoot, (this as any).params || {});
+          connectTemplateDirectives(this as any, mountRoot);
           // The user's callback receives route params and a fully mounted,
           // styled template synchronously.
           try { if (super.connectedCallback) super.connectedCallback(); } catch (e) { console.error(e); }
@@ -362,6 +367,7 @@ export function defineComponent(optsOrCtor: any) {
           } catch (e) { console.error(e); }
         }
         disconnectedCallback() {
+          disconnectTemplateDirectives(this as any);
           disconnectRealtimeComponent(this as any);
           try {
             const list = (this as any).__sfc_listeners || [];
@@ -427,6 +433,7 @@ export function defineComponent(optsOrCtor: any) {
       // interpolate template
       interpolateTemplate(mountRoot, (this as any).params || {});
       connectRealtimeComponent(this as any, mountRoot);
+      connectTemplateDirectives(this as any, mountRoot);
       // call user connectedCallback
       if (opts.connectedCallback) {
         try { opts.connectedCallback.call(this); } catch (e) { console.error(e); }
@@ -455,6 +462,7 @@ export function defineComponent(optsOrCtor: any) {
       // already invoked above; do not call twice
     }
     disconnectedCallback() {
+      disconnectTemplateDirectives(this as any);
       disconnectRealtimeComponent(this as any);
       if (opts.disconnectedCallback) {
         try { opts.disconnectedCallback.call(this); } catch (e) { console.error(e); }

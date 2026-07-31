@@ -13,9 +13,11 @@ async function readJson(response: Response) {
     const error = new Error(data.error || 'Request failed') as Error & {
       status?: number;
       code?: string;
+      data?: unknown;
     };
     error.status = response.status;
     error.code = data.code;
+    error.data = data;
     throw error;
   }
   return data;

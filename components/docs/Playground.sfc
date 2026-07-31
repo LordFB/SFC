@@ -18,10 +18,10 @@
 const initialSource = `<template>
   <main class="counter-card">
     <span>LIVE SFC COMPONENT</span>
-    <h1>Count: <output>0</output></h1>
-    <p>Edit this component. The preview recompiles as you type.</p>
-    <button class="decrease">−</button>
-    <button class="increase">+</button>
+    <h1>Count: <output>{{ count }}</output></h1>
+    <p @Hover="{color:red; transition:all 1s;}">Edit this component. The preview recompiles as you type.</p>
+    <button @Click="update(-1)" class="decrease">−</button>
+    <button @Click="update(1)" class="increase">+</button>
   </main>
 </template>
 
@@ -30,14 +30,8 @@ export default class extends HTMLElement {
   static ['tag'] = 'play-counter';
   count = 0;
 
-  connectedCallback() {
-    this.querySelector('.decrease')?.addEventListener('click', () => this.update(-1));
-    this.querySelector('.increase')?.addEventListener('click', () => this.update(1));
-  }
-
   update(delta) {
     this.count += delta;
-    this.querySelector('output').textContent = String(this.count);
   }
 }
 <\/script>
@@ -111,8 +105,17 @@ export default class extends HTMLElement {
       if(!template) throw new Error('Add a <template> block to render the preview.');
       const tag=script.match(/static\s+(?:tag|\[['"]tag['"]\])\s*=\s*['"]([a-z][\w-]*-[\w-]+)['"]/)?.[1] || 'play-preview';
       script=script.replace(/export\s+default\s+class/, 'class UserComponent');
-      const executable=script.trim() ? `${script}\nclass PreviewElement extends UserComponent { connectedCallback(){ if(!this.__mounted){ this.__mounted=true; this.insertAdjacentHTML('beforeend', ${JSON.stringify(template)}); } if(super.connectedCallback) super.connectedCallback(); } }\ncustomElements.define(${JSON.stringify(tag)}, PreviewElement);` : `customElements.define(${JSON.stringify(tag)}, class extends HTMLElement { connectedCallback(){ this.innerHTML=${JSON.stringify(template)}; } });`;
-      const escapedScript=executable.replace(/<\/script/gi,'<\\/script');
+      const executable=script.trim() ? `${script}\nclass PreviewElement extends UserComponent {\n  connectedCallback(){\n    if(!this.__mounted){\n      this.__mounted=true;\n      this.insertAdjacentHTML('beforeend', ${JSON.stringify(template)});\n      this.__bindTemplate();\n    }\n    if(super.connectedCallback) super.connectedCallback();\n  }\n  __bindTemplate(){\n    const bindings=new Map();\n    const bind=(raw,write)=>{\n      const tokens=[...raw.matchAll(/\\{\\{\\s*([a-zA-Z_$][\\w$]*)\\s*\\}\\}/g)].map(match=>match[1]);\n      if(!tokens.length)return;\n      const render=()=>write(raw.replace(/\\{\\{\\s*([a-zA-Z_$][\\w$]*)\\s*\\}\\}/g,(_match,token)=>String(this[token]??'')));\n      for(const token of new Set(tokens)){\n        let listeners=bindings.get(token);\n        if(!listeners){\n          listeners=new Set(); bindings.set(token,listeners);\n          const descriptor=Object.getOwnPropertyDescriptor(this,token);\n          if(descriptor?.configurable&&'value' in descriptor&&descriptor.writable!==false){\n            let value=descriptor.value;\n            Object.defineProperty(this,token,{configurable:true,enumerable:descriptor.enumerable,get:()=>value,set:next=>{if(Object.is(value,next))return;value=next;for(const listener of listeners)listener();}});\n          }\n        }\n        listeners.add(render);\n      }\n      render();\n    };\n    const walker=document.createTreeWalker(this,NodeFilter.SHOW_TEXT); let node;\n    while(node=walker.nextNode()){const target=node;bind(target.textContent||'',value=>target.textContent=value);}\n    for(const element of this.querySelectorAll('*'))for(const attribute of [...element.attributes])bind(attribute.value,value=>element.setAttribute(attribute.name,value));\n  }\n}\ncustomElements.define(${JSON.stringify(tag)}, PreviewElement);` : `customElements.define(${JSON.stringify(tag)}, class extends HTMLElement { connectedCallback(){ this.innerHTML=${JSON.stringify(template)}; } });`;
+      const directiveRuntime=String.raw`
+  __bindDirectives(){
+    const split=(source,separators)=>{const parts=[];let quote='',depth=0,start=0;for(let index=0;index<source.length;index++){const character=source[index];if(quote){if(character==='\\')index++;else if(character===quote)quote='';continue;}if(character==='"'||character==="'")quote=character;else if('([{'.includes(character))depth++;else if(')]}'.includes(character))depth--;else if(separators.includes(character)&&depth===0){parts.push(source.slice(start,index).trim());start=index+1;}}parts.push(source.slice(start).trim());return parts.filter(Boolean);};
+    const argument=(source,event)=>{const value=source.trim();if(value==='$event')return event;if(value==='true')return true;if(value==='false')return false;if(value==='null')return null;if(value==='undefined')return undefined;if(value!==''&&Number.isFinite(Number(value)))return Number(value);if((value.startsWith('"')&&value.endsWith('"'))||(value.startsWith("'")&&value.endsWith("'")))return value.slice(1,-1);throw new SyntaxError('Unsupported directive argument: '+value);};
+    const bindCall=(element,eventName,directive,expression)=>{const call=expression.trim().match(/^([a-zA-Z_$][\w$]*)(?:\s*\(([\s\S]*)\))?$/);if(!call)throw new SyntaxError('Invalid '+directive+' expression: '+expression);element.addEventListener(eventName,event=>{const method=this[call[1]];if(typeof method!=='function')throw new TypeError(directive+' method not found: '+call[1]);const args=call[2]===undefined||!call[2].trim()?[]:split(call[2],',').map(value=>argument(value,event));method.apply(this,args);});};
+    for(const element of this.querySelectorAll('*'))for(const attribute of [...element.attributes]){const name=attribute.name.toLowerCase();if(name==='@click'){bindCall(element,'click','@Click',attribute.value);element.removeAttribute(attribute.name);}else if(name==='@hover'){const expression=attribute.value.trim();if(!expression.startsWith('{'))bindCall(element,'mouseenter','@Hover',expression);else{if(!expression.endsWith('}'))throw new SyntaxError('Invalid @Hover CSS object');const declarations=split(expression.slice(1,-1),',;').map(source=>{const pair=split(source,':');if(pair.length!==2)throw new SyntaxError('Invalid CSS declaration: '+source);const rawProperty=pair[0].trim().replace(/^['"]|['"]$/g,'');if(!(rawProperty.startsWith('--')||/^[a-zA-Z][\w-]*$/.test(rawProperty)))throw new SyntaxError('Invalid CSS property: '+rawProperty);const property=rawProperty.startsWith('--')?rawProperty:rawProperty.replace(/[A-Z]/g,value=>'-'+value.toLowerCase());let value=pair[1].trim();if((value.startsWith('"')&&value.endsWith('"'))||(value.startsWith("'")&&value.endsWith("'")))value=value.slice(1,-1);if(!value)throw new SyntaxError('Invalid CSS value: '+value);return[property,value];});const previous=declarations.map(([property])=>[property,element.style.getPropertyValue(property),element.style.getPropertyPriority(property)]);element.addEventListener('mouseenter',()=>declarations.forEach(([property,value])=>element.style.setProperty(property,value)));element.addEventListener('mouseleave',()=>previous.forEach(([property,value,priority])=>value?element.style.setProperty(property,value,priority):element.style.removeProperty(property)));}element.removeAttribute(attribute.name);}}
+  }
+`;
+      const enhancedExecutable=executable.replace('this.__bindTemplate();','this.__bindTemplate();\n      this.__bindDirectives();').replace(/\n}\ncustomElements\.define/,`\n${directiveRuntime}}\ncustomElements.define`);
+      const escapedScript=enhancedExecutable.replace(/<\/script/gi,'<\\/script');
       const html=`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><${'style'}>*{box-sizing:border-box}html,body{margin:0;min-height:100%}${style}</${'style'}></head><body><${tag}></${tag}><script>window.addEventListener('error',e=>document.body.dataset.error=e.message);${escapedScript}<\/script></body></html>`;
       (this.querySelector('#preview') as HTMLIFrameElement).srcdoc=html; this.showDiagnostic(null); this.setStatus('PREVIEW LIVE');
     } catch(error) { this.showDiagnostic(error); }

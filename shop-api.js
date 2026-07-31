@@ -14,6 +14,8 @@ const RECENT_AUTH_LIFETIME = 5 * 60 * 1000;
 const MAX_BODY_BYTES = 64 * 1024;
 const LOGIN_WINDOW = 15 * 60 * 1000;
 const LOGIN_MAX_ATTEMPTS = 5;
+const SESSION_ISSUE_WINDOW = 60 * 1000;
+const SESSION_ISSUE_MAX = 300;
 const ARGON2_OPTIONS = {
   type: argon2.argon2id,
   memoryCost: 19 * 1024,
@@ -60,6 +62,13 @@ function validPassword(value) {
   return typeof value === 'string' && value.length >= 12 && value.length <= 128;
 }
 
+function boundedText(value, maximum, { optional = false } = {}) {
+  if (optional && (value === undefined || value === null || value === '')) return '';
+  if (typeof value !== 'string') return null;
+  const text = value.normalize('NFKC').trim();
+  return text.length > 0 && text.length <= maximum ? text : null;
+}
+
 export function createShopApi({
   production = process.env.NODE_ENV === 'production',
   port = 3000,
@@ -70,6 +79,8 @@ export function createShopApi({
   const origin = configuredOrigin || `http://localhost:${port}`;
   const cookieName = production ? '__Host-sfc_session' : 'sfc_session';
   const parsedOrigin = new URL(origin);
+  let issuedSessions = 0;
+  const sessionIssueLimits = new Map();
 
   if (production) {
     if (!configuredOrigin || !configuredRPID) {
@@ -96,7 +107,32 @@ export function createShopApi({
     res.end(JSON.stringify(data));
   }
 
-  function issueSession(res, timestamp) {
+  function auditSecurity(event, req, details = {}) {
+    console.info(JSON.stringify({
+      type: 'security_audit', event, timestamp: new Date(now()).toISOString(),
+      source: tokenHash(req.socket.remoteAddress || 'unknown').slice(0, 16),
+      ...details,
+    }));
+  }
+
+  function issueSession(req, res, timestamp) {
+    const address = req.socket.remoteAddress || 'unknown';
+    const previous = sessionIssueLimits.get(address);
+    const entry = previous && timestamp - previous.startedAt < SESSION_ISSUE_WINDOW
+      ? previous : { startedAt: timestamp, count: 0 };
+    entry.count++;
+    sessionIssueLimits.set(address, entry);
+    if (entry.count > SESSION_ISSUE_MAX) {
+      const error = new Error('Too many new sessions. Try again shortly.');
+      error.status = 429;
+      throw error;
+    }
+    if (++issuedSessions % 100 === 0) shopDb.cleanupSecurityState(timestamp);
+    if (sessionIssueLimits.size > 10_000) {
+      for (const [key, value] of sessionIssueLimits) {
+        if (timestamp - value.startedAt >= SESSION_ISSUE_WINDOW) sessionIssueLimits.delete(key);
+      }
+    }
     const token = base64url();
     const session = shopDb.createSession({
       tokenHash: tokenHash(token),
@@ -121,7 +157,7 @@ export function createShopApi({
     let session = token ? shopDb.getSessionByTokenHash(tokenHash(token)) : null;
     if (!session || session.expires_at <= timestamp) {
       if (session) shopDb.revokeSession(session.id, timestamp);
-      return issueSession(res, timestamp);
+      return issueSession(req, res, timestamp);
     }
 
     const authExpired = session.user_id && (
@@ -190,8 +226,8 @@ export function createShopApi({
     }
   }
 
-  function rateKey(req, email) {
-    return tokenHash(`${req.socket.remoteAddress || 'unknown'}|${email}`);
+  function rateKey(req, subject, purpose = 'login') {
+    return tokenHash(`${purpose}|${req.socket.remoteAddress || 'unknown'}|${subject}`);
   }
 
   function assertNotRateLimited(key) {
@@ -238,6 +274,9 @@ export function createShopApi({
       error.status = 400;
       throw error;
     }
+    const registrationKey = rateKey(req, 'account-creation', 'register');
+    assertNotRateLimited(registrationKey);
+    recordLoginFailure(registrationKey);
     if (shopDb.getUserByEmail(email)) {
       const error = new Error('Account unavailable');
       error.status = 409;
@@ -256,6 +295,7 @@ export function createShopApi({
     }
     shopDb.authenticateSession(session.id, user.id, now());
     const rotated = rotateSession(res, shopDb.getSessionById(session.id), now());
+    auditSecurity('account.registered', req, { actor: user.id });
     return { user, session: rotated };
   }
 
@@ -268,12 +308,14 @@ export function createShopApi({
     const verified = await verifyPassword(password, user?.password_hash);
     if (!user || !verified) {
       recordLoginFailure(key);
+      auditSecurity('auth.login_failed', req);
       const error = new Error('Invalid email or password');
       error.status = 401;
       throw error;
     }
     shopDb.clearRateLimit(key);
     shopDb.authenticateSession(session.id, user.id, now());
+    auditSecurity('auth.login_succeeded', req, { actor: user.id });
     return { user, session: rotateSession(res, shopDb.getSessionById(session.id), now()) };
   }
 
@@ -329,6 +371,7 @@ export function createShopApi({
       const passwordHash = await argon2.hash(body.password, ARGON2_OPTIONS);
       shopDb.updatePasswordHash(session.user_id, passwordHash);
       shopDb.revokeOtherUserSessions(session.user_id, session.id, now());
+      auditSecurity('auth.password_changed', req, { actor: session.user_id });
       const rotated = rotateSession(res, session, now());
       return writeJson(res, 200, { changed: true, csrfToken: rotated.csrf_token });
     }
@@ -340,6 +383,7 @@ export function createShopApi({
     if (path === '/shop/api/auth/logout-all' && req.method === 'POST') {
       requireAuthenticated(session);
       shopDb.revokeOtherUserSessions(session.user_id, session.id, now());
+      auditSecurity('auth.logout_all', req, { actor: session.user_id });
       shopDb.clearSessionAuth(session.id, now());
       const rotated = rotateSession(res, shopDb.getSessionById(session.id), now());
       return writeJson(res, 200, { authenticated: false, csrfToken: rotated.csrf_token });
@@ -357,7 +401,7 @@ export function createShopApi({
     if (path === '/shop/api/cart' && req.method === 'POST') {
       switch (body.action) {
         case 'get': return writeJson(res, 200, shopDb.getCart(session.id));
-        case 'add': return writeJson(res, 200, shopDb.addToCart(session.id, body.productId, body.quantity || 1));
+        case 'add': return writeJson(res, 200, shopDb.addToCart(session.id, body.productId, body.quantity ?? 1));
         case 'update': return writeJson(res, 200, shopDb.updateCartQuantity(session.id, body.productId, body.quantity));
         case 'remove': return writeJson(res, 200, shopDb.removeFromCart(session.id, body.productId));
         case 'clear': return writeJson(res, 200, shopDb.clearCart(session.id));
@@ -369,13 +413,15 @@ export function createShopApi({
       switch (body.action) {
         case 'create': {
           const { name, email, address } = body.customerInfo || {};
-          if (!name?.trim() || !normalizeEmail(email) || !address?.trim()) {
+          const normalizedName = boundedText(name, 120);
+          const normalizedAddress = boundedText(address, 500);
+          if (!normalizedName || !normalizeEmail(email) || !normalizedAddress) {
             return writeJson(res, 400, { error: 'Valid name, email, and address are required' });
           }
           const order = shopDb.createOrder(session.id, session.user_id, {
-            name: name.trim(),
+            name: normalizedName,
             email: normalizeEmail(email),
-            address: address.trim(),
+            address: normalizedAddress,
           });
           return writeJson(res, 200, { order });
         }
@@ -392,10 +438,20 @@ export function createShopApi({
     return writeJson(res, 404, { error: 'Not found' });
   }
 
-  return async function handleShopApi(req, res) {
+  function authenticatedSessionFor(req) {
+    const timestamp = now();
+    const token = parseCookies(req.headers.cookie)[cookieName];
+    if (!token) return null;
+    const session = shopDb.getSessionByTokenHash(tokenHash(token));
+    if (!session?.user_id || session.expires_at <= timestamp || !session.authenticated_at || !session.auth_last_seen_at) return null;
+    if (timestamp - session.authenticated_at >= AUTH_ABSOLUTE_LIFETIME || timestamp - session.auth_last_seen_at >= AUTH_IDLE_LIFETIME) return null;
+    return session;
+  }
+
+  const handleShopApi = async function handleShopApi(req, res) {
     const url = new URL(req.url, origin);
-    const session = resolveSession(req, res);
     try {
+      const session = resolveSession(req, res);
       const body = req.method === 'GET' ? {} : await parseBody(req);
       await dispatch(req, res, url, session, body);
     } catch (error) {
@@ -407,6 +463,17 @@ export function createShopApi({
       });
     }
   };
+  handleShopApi.authorizeRealtime = (req, operation) => {
+    const session = authenticatedSessionFor(req);
+    if (!session) {
+      const error = new Error('Authentication required');
+      error.status = 401;
+      throw error;
+    }
+    if (operation === 'write') requireMutationProtection(req, session);
+    return { scope: session.user_id };
+  };
+  return handleShopApi;
 }
 
 export const securityConstants = {

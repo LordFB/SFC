@@ -88,11 +88,11 @@ the current URL.
 
 ## Realtime values
 
-`realtimeValue()` connects an SFC field to a persistent SQLite key. Writes are
-committed through the server and fanned out over Server-Sent Events; subscribers
-receive versioned updates and the component unsubscribes during teardown. The
-advanced chapter demonstrates the API, while the stress lab measures concurrent
-writes, persistence, event delivery, and end-to-end latency in the browser.
+`realtimeValue()` connects an SFC field to a persistent SQLite key. Realtime
+reads, subscriptions, and writes require an authenticated `HttpOnly` session.
+Keys are cryptographically namespaced by user on the server, and mutations use
+the same exact-origin CSRF protection as the shop API. Subscribers receive
+versioned updates and the component unsubscribes during teardown.
 
 ## Data adapters
 
@@ -107,6 +107,24 @@ Copy `.env.example` to `.env.local` for local credentials. The serve and build
 commands load `.env`, `.env.local`, `.env.<mode>`, and
 `.env.<mode>.local`; variables already present in the process take precedence.
 All real `.env` variants are ignored by Git.
+
+Runtime databases default to the ignored `.data/` directory. In production,
+set `SFC_DATA_DIR` or explicit database paths to a restricted, encrypted volume
+that is backed up independently of the application checkout.
+
+## Production security
+
+The production server serves the living documentation with CSP, HSTS,
+clickjacking protection, referrer and permissions policies, request timeouts,
+and connection limits. Mutable shop and realtime demonstration services are
+disabled by default; setting `ENABLE_DEMO_SERVICES=true` deliberately enables
+their strict sessions, CSRF validation, cleanup, and authenticated isolation.
+Terminate TLS at a trusted reverse proxy and keep `AUTH_ORIGIN` identical to the
+public HTTPS origin. The development server binds to loopback unless `DEV_HOST`
+is explicitly configured.
+
+See [SECURITY.md](SECURITY.md) for deployment controls and the one-time Git
+history cleanup required for older checkouts.
 
 ## Commands
 

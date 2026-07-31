@@ -1,4 +1,5 @@
 // lazy-import components on-demand for route-based code splitting
+import './auth-client';
 const modules = import.meta.glob([
   '../components/**/*.sfc',
   '!../components/GlobalStyles.sfc',

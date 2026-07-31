@@ -1,5 +1,7 @@
 const REALTIME_VALUE = Symbol('sfc.realtime-value');
 const DEFAULT_ENDPOINT = '/__sfc/realtime';
+const IS_DEVELOPMENT = Boolean((import.meta as ImportMeta & { env?: { DEV?: boolean } }).env?.DEV)
+  || (typeof location !== 'undefined' && ['localhost', '127.0.0.1', '::1'].includes(location.hostname));
 
 export type RealtimeSnapshot<T> = {
   key: string;
@@ -43,7 +45,7 @@ class RealtimeHub {
   private scheduleReconnect() {
     if (this.scheduled) return;
     this.scheduled = true;
-    queueMicrotask(() => {
+    queueMicrotask(async () => {
       this.scheduled = false;
       for (const source of this.sources) source.close();
       this.sources = [];
@@ -62,6 +64,10 @@ class RealtimeHub {
         encodedLength += nextLength;
       }
       if (chunk.length) chunks.push(chunk);
+      if (!IS_DEVELOPMENT) {
+        const session = await window.shopAuth?.getSession().catch(() => null);
+        if (!session?.authenticated) return;
+      }
       for (const keysInSource of chunks) {
         const query = new URLSearchParams();
         for (const key of keysInSource) query.append('key', key);
@@ -164,20 +170,38 @@ export class ReactiveRealtimeValue<T> {
   }
 
   private async write(method: 'PUT' | 'DELETE', value: T | undefined, expectedVersion?: number) {
-    const response = await fetch(`${this.endpoint}/value`, {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    if (IS_DEVELOPMENT) {
+      const response = await fetch(`${this.endpoint}/value`, {
+        method, headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          key: this.key,
+          ...(method === 'PUT' ? { value } : {}),
+          ...(expectedVersion === undefined ? {} : { expectedVersion }),
+        }),
+      });
+      const result = await response.json();
+      if (response.status === 409) throw new RealtimeConflictError(result.current);
+      if (!response.ok) throw new Error(result.error || `Realtime write failed (${response.status})`);
+      this.apply(result.value);
+      return result.value as RealtimeSnapshot<T>;
+    }
+    if (!window.shopAuth) throw new Error('Authenticated API client is unavailable');
+    try {
+      const result = await window.shopAuth.api(`${this.endpoint}/value`, {
+        method,
+        body: {
         key: this.key,
         ...(method === 'PUT' ? { value } : {}),
         ...(expectedVersion === undefined ? {} : { expectedVersion })
-      })
-    });
-    const result = await response.json();
-    if (response.status === 409) throw new RealtimeConflictError(result.current);
-    if (!response.ok) throw new Error(result.error || `Realtime write failed (${response.status})`);
-    this.apply(result.value);
-    return result.value as RealtimeSnapshot<T>;
+        },
+      });
+      this.apply(result.value);
+      return result.value as RealtimeSnapshot<T>;
+    } catch (error) {
+      const apiError = error as Error & { status?: number; data?: { current?: RealtimeSnapshot<T> } };
+      if (apiError.status === 409) throw new RealtimeConflictError(apiError.data?.current || null);
+      throw error;
+    }
   }
 
   private apply(snapshot: RealtimeSnapshot<T> | null) {
@@ -212,6 +236,13 @@ type RealtimeOwner = HTMLElement & {
   __sfc_realtime_cleanup?: Array<() => void>;
 };
 
+type LocalFieldBinding = {
+  value: unknown;
+  listeners: Set<() => void>;
+};
+
+const localFieldBindings = new WeakMap<object, Map<string, LocalFieldBinding>>();
+
 function resolveToken(owner: Record<string, unknown>, token: string): unknown {
   const value = owner[token];
   if (isRealtimeValue(value)) return value.value;
@@ -233,7 +264,35 @@ function bindInterpolatedValue(
   ));
   for (const token of new Set(tokens)) {
     const candidate = owner[token];
-    if (isRealtimeValue(candidate)) cleanup.push(candidate.subscribe(render, false));
+    if (isRealtimeValue(candidate)) {
+      cleanup.push(candidate.subscribe(render, false));
+      continue;
+    }
+
+    let bindings = localFieldBindings.get(owner);
+    let binding = bindings?.get(token);
+    if (!binding) {
+      const descriptor = Object.getOwnPropertyDescriptor(owner, token);
+      if (!descriptor || !descriptor.configurable || !('value' in descriptor) || descriptor.writable === false) continue;
+      binding = { value: descriptor.value, listeners: new Set() };
+      if (!bindings) {
+        bindings = new Map();
+        localFieldBindings.set(owner, bindings);
+      }
+      bindings.set(token, binding);
+      Object.defineProperty(owner, token, {
+        configurable: true,
+        enumerable: descriptor.enumerable,
+        get: () => binding!.value,
+        set: value => {
+          if (Object.is(binding!.value, value)) return;
+          binding!.value = value;
+          for (const listener of binding!.listeners) listener();
+        }
+      });
+    }
+    binding.listeners.add(render);
+    cleanup.push(() => binding!.listeners.delete(render));
   }
   render();
 }

@@ -301,6 +301,7 @@ export default class extends HTMLElement {
   private async testReactive(): Promise<TestResult> {
     const next = this.sharedCounter.value + 1;
     const snapshot = await this.sharedCounter.set(next);
+    await this.waitFor(() => this.shadowRoot?.querySelector('#reactive-value')?.textContent?.trim() === String(next));
     const rendered = this.shadowRoot?.querySelector('#reactive-value')?.textContent?.trim();
     if (rendered !== String(next)) throw new Error(`DOM rendered "${rendered}", expected "${next}"`);
     return { detail: `DOM updated to ${next} at revision ${snapshot.version}` };
@@ -442,6 +443,14 @@ export default class extends HTMLElement {
         }
       });
     });
+  }
+
+  private async waitFor(predicate: () => boolean, timeout = 1000) {
+    const started = performance.now();
+    while (!predicate()) {
+      if (performance.now() - started >= timeout) return;
+      await new Promise(resolve => requestAnimationFrame(resolve));
+    }
   }
 
   private async mapConcurrent<T, R>(values: T[], concurrency: number, worker: (value: T) => Promise<R>) {

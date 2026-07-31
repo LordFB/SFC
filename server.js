@@ -68,8 +68,11 @@ async function initModules() {
 const args = process.argv.slice(2);
 const PORT = parseInt(args.find(a => a.startsWith('--port='))?.split('=')[1] || '5173', 10);
 const PROD_MODE = args.includes('--prod');
+const DEV_HOST = process.env.DEV_HOST || '127.0.0.1';
 const shopApiHandler = createShopApi({ production: PROD_MODE, port: PORT });
-const realtimeService = createRealtimeService();
+const realtimeService = createRealtimeService({
+  authorize: PROD_MODE ? shopApiHandler.authorizeRealtime : async () => ({ scope: 'loopback-documentation' }),
+});
 
 // MIME types for common file extensions
 const MIME_TYPES = {
@@ -827,7 +830,11 @@ const server = http.createServer({
 
 // Initialize modules and start server
 initModules().then(() => {
-  server.listen(PORT, () => {
+server.headersTimeout = 15_000;
+server.requestTimeout = 30_000;
+server.maxRequestsPerSocket = 1000;
+
+server.listen(PORT, DEV_HOST, () => {
     if (!PROD_MODE) {
       startFileWatcher();
       console.log(`[sfc] Live reload watching src/, components/, and index.html`);

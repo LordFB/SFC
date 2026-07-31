@@ -1,15 +1,15 @@
 import { Plugin, ViteDevServer } from 'vite';
-import { transformSFC, invalidateTagMapCache } from './transformer';
+import { transformSFC, invalidateTagMapCache } from './transformer.ts';
 import fs from 'fs';
 import path from 'path';
-import { debounce } from './utils/debounce';
+import { debounce } from './utils/debounce.ts';
 import esbuild from 'esbuild';
 import * as parser from '@babel/parser';
 import traverse from '@babel/traverse';
 import generate from '@babel/generator';
 import * as t from '@babel/types';
 import ts from 'typescript';
-import { getTransformCache, TransformCache } from './cache';
+import { getTransformCache, TransformCache } from './cache.ts';
 import { extractComponentTag } from './sfc-metadata.js';
 
 export interface SfcPluginOptions {

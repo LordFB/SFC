@@ -1,5 +1,5 @@
 import { defineConfig } from 'vite';
-import sfcPlugin from './src/plugin';
+import sfcPlugin from './src/plugin.ts';
 
 /**
  * Build configuration for production.
