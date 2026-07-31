@@ -1,5 +1,5 @@
 <template>
-  <sfc-doc-shell section="advanced"><article class="doc-page">
+  <article class="doc-page">
     <div class="doc-breadcrumb"><span>03</span><i></i><span>Full-stack patterns</span></div>
     <header class="doc-hero"><h1>One value.<br><em>Every layer.</em></h1><p>Compose routes, authenticated APIs, SQLite transactions, and realtime values into complete features while preserving ownership, cleanup, and production safety.</p><div class="doc-meta"><span>Advanced</span><span>~28 minutes</span><span>Full stack</span><span>Realtime</span></div></header>
     <nav class="doc-toc"><b>ON THIS PAGE</b><a href="#vertical">Vertical slice</a><a href="#live">Live demo</a><a href="#concurrency">Concurrency</a><a href="#scale">Scale</a><a href="#deploy">Deploy</a></nav>
@@ -28,20 +28,19 @@
       <div class="doc-grid"><div class="doc-card"><span>BUILD TIME</span><h3>Public route data</h3><ul><li>Concrete HTML paths</li><li>Colocated JSON blobs</li><li>Hashed lazy route chunks</li></ul></div><div class="doc-card"><span>REQUEST TIME</span><h3>Private authority</h3><ul><li>HttpOnly sessions</li><li>Origin + CSRF enforcement</li><li>User-owned database reads</li></ul></div></div>
     </section>
     <a class="doc-next" href="/internals"><span>NEXT CHAPTER<strong>Compiler and runtime internals</strong></span><i>→</i></a>
-  </article></sfc-doc-shell>
+  </article>
 </template>
 <script lang="ts">
-import './DocsStyles.sfc'; import './Shell.sfc';
 import { realtimeValue } from '/src/runtime/index.ts';
 const snippets = {
-  vertical: `import { realtimeValue } from '/src/runtime/index.ts';\n\nexport default class extends HTMLElement {\n  static ['tag'] = 'presence-board';\n  room = realtimeValue('presence/room-a', { users: 0 });\n\n  connectedCallback() {\n    Promise.resolve().then(() => {\n      this.querySelector('button')?.addEventListener('click', this.join);\n    });\n  }\n\n  join = () => this.room.update(state => ({ ...state, users: state.users + 1 }));\n}\n\n// Template text: Online now: {{room}}`,
+  vertical: `import { realtimeValue } from '/src/runtime/index.ts';\n\nexport default class extends HTMLElement {\n  static ['tag'] = 'presence-board';\n  room = realtimeValue('presence/room-a', { users: 0 });\n\n  connectedCallback() {\n    this.querySelector('button')?.addEventListener('click', this.join);\n  }\n\n  join = () => this.room.update(state => ({ ...state, users: state.users + 1 }));\n}\n\n// Template text: Online now: {{room}}`,
   transition: `const snapshot = task.snapshot;\nif (!snapshot || snapshot.value.status !== 'draft') return;\n\ntry {\n  await task.set(\n    { ...snapshot.value, status: 'published' },\n    { expectedVersion: snapshot.version }\n  );\n} catch (error) {\n  if (error instanceof RealtimeConflictError) {\n    showConflict(error.current);\n  }\n}`
 };
 export default class extends HTMLElement {
   static tag='sfc-advanced-page';
   sharedCount = realtimeValue('docs/advanced/count', 0);
   private cleanup: Array<() => void> = [];
-  connectedCallback(){ Promise.resolve().then(()=>{ this.querySelectorAll('[data-snippet]').forEach(n=>n.textContent=snippets[n.getAttribute('data-snippet')]); const up=()=>void this.sharedCount.update(v=>v+1); const down=()=>void this.sharedCount.update(v=>v-1); this.querySelector('#increase')?.addEventListener('click',up); this.querySelector('#decrease')?.addEventListener('click',down); this.cleanup.push(()=>this.querySelector('#increase')?.removeEventListener('click',up),()=>this.querySelector('#decrease')?.removeEventListener('click',down),this.sharedCount.subscribe((_v,s)=>{ const el=this.querySelector('#revision'); if(el) el.textContent=String(s?.version||0); })); }); }
+  connectedCallback(){ this.querySelectorAll('[data-snippet]').forEach(n=>n.textContent=snippets[n.getAttribute('data-snippet')]); const up=()=>void this.sharedCount.update(v=>v+1); const down=()=>void this.sharedCount.update(v=>v-1); this.querySelector('#increase')?.addEventListener('click',up); this.querySelector('#decrease')?.addEventListener('click',down); this.cleanup.push(()=>this.querySelector('#increase')?.removeEventListener('click',up),()=>this.querySelector('#decrease')?.removeEventListener('click',down),this.sharedCount.subscribe((_v,s)=>{ const el=this.querySelector('#revision'); if(el) el.textContent=String(s?.version||0); })); }
   disconnectedCallback(){ this.cleanup.splice(0).forEach(fn=>fn()); }
 }
 </script>

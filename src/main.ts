@@ -1,8 +1,15 @@
 // lazy-import components on-demand for route-based code splitting
-const modules = import.meta.glob('../components/**/*.sfc', { eager: false });
+const modules = import.meta.glob([
+  '../components/**/*.sfc',
+  '!../components/GlobalStyles.sfc',
+  '!../components/docs/DocsStyles.sfc',
+  '!../components/docs/Shell.sfc'
+], { eager: false });
 
 // Eagerly load global styles so shared appearance is applied immediately
 import '../components/GlobalStyles.sfc';
+import '../components/docs/DocsStyles.sfc';
+import '../components/docs/Shell.sfc';
 
 import { routes } from 'virtual:routes';
 import { parseRouteParams } from './runtime/index';
@@ -17,6 +24,49 @@ let currentRouteElement: HTMLElement | null = null;
 
 // Preload cache for hover intent
 const preloadCache = new Set<string>();
+
+const showcaseSections: Record<string, string> = {
+  '/basics': 'basics',
+  '/intermediate': 'intermediate',
+  '/advanced': 'advanced',
+  '/internals': 'internals',
+  '/playground': 'playground',
+  '/stress-testing': 'stress'
+};
+
+function prepareRouteMount(route: any, path: string): HTMLElement {
+  const app = (document.querySelector('#app') || document.body) as HTMLElement;
+  const section = showcaseSections[path];
+  let shell = app.querySelector(':scope > sfc-doc-shell') as HTMLElement | null;
+
+  if (!section) {
+    shell?.remove();
+    return app;
+  }
+
+  if (!shell) {
+    shell = document.createElement('sfc-doc-shell');
+    shell.setAttribute('section', section);
+    app.appendChild(shell);
+  } else {
+    shell.setAttribute('section', section);
+  }
+
+  // Built pages arrive with their generated route element directly in #app.
+  // Move it into the persistent shell before its module upgrades the element.
+  if (route.tag) {
+    const generated = app.querySelector(`:scope > ${route.tag}`);
+    if (generated && generated !== shell) shell.appendChild(generated);
+  }
+
+  return shell;
+}
+
+function eventAnchor(event: Event): HTMLAnchorElement | null {
+  return (event.composedPath().find(node =>
+    node instanceof HTMLAnchorElement && node.matches('a[href]')
+  ) as HTMLAnchorElement | undefined) || null;
+}
 
 localStorage.setItem('sfc-disable-transitions', 'false');
 
@@ -69,6 +119,10 @@ async function navigateToRoute(fullPath: string, pushState = true) {
       return;
     }
 
+    // The documentation shell belongs to the router, not an individual page.
+    // It is created once and only its slotted route content is replaced.
+    const mountRoot = prepareRouteMount(matchedRoute, path);
+
     // Lazy-load component module if not already loaded
     const moduleKey = matchedRoute.filePath;
     if (!loadedModules.has(moduleKey)) {
@@ -95,8 +149,6 @@ async function navigateToRoute(fullPath: string, pushState = true) {
         return;
       }
 
-      const mountRoot = document.querySelector('#app') || document.body;
-
       // Generated Jamstack pages already contain their route component. Adopt
       // that element on first load instead of mounting a duplicate beside it.
       if (!currentRouteElement) {
@@ -116,13 +168,18 @@ async function navigateToRoute(fullPath: string, pushState = true) {
       const el = document.createElement(matchedRoute.tag);
       mountRoot.appendChild(el);
       currentRouteElement = el;
+      if (pushState) window.scrollTo(0, 0);
     };
 
     // Check if transitions are disabled via localStorage or prefers-reduced-motion
     const transitionsDisabled = localStorage.getItem('sfc-disable-transitions') === 'true' 
       || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-    if ((document as any).startViewTransition && !transitionsDisabled) {
+    // A root-level view transition snapshots the sidebar too, making a
+    // persistent shell look as if it refreshed. Keep showcase navigation scoped
+    // to replacing the slotted page element only.
+    const usesPersistentShell = mountRoot.matches('sfc-doc-shell');
+    if ((document as any).startViewTransition && !transitionsDisabled && !usesPersistentShell) {
       try {
         await (document as any).startViewTransition(performTransition).finished;
       } catch (e) {
@@ -166,7 +223,7 @@ async function preloadRoute(path: string) {
 
 // Intercept link clicks for SPA navigation
 document.addEventListener('click', (e) => {
-  const target = (e.target as HTMLElement).closest('a[href]');
+  const target = eventAnchor(e);
   if (!target) return;
   
   const href = target.getAttribute('href');
@@ -190,7 +247,7 @@ window.addEventListener('popstate', (e) => {
 // Preload on link hover (predictive loading)
 let hoverTimer: number | null = null;
 document.addEventListener('mouseover', (e) => {
-  const target = (e.target as HTMLElement).closest('a[href]');
+  const target = eventAnchor(e);
   if (!target) return;
   
   const href = target.getAttribute('href');

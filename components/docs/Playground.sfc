@@ -1,8 +1,8 @@
 <template>
-  <sfc-doc-shell section="playground">
-    <section class="playground-page">
-      <header class="playground-head"><div><span>05 / SFC PLAYGROUND</span><h1>Code. Compile.<br><em>See it breathe.</em></h1><p>A self-hosted Monaco workspace with an isolated live preview. Edit the template, class behavior, or styles; the preview recompiles after every pause.</p></div><div class="playground-status"><i></i><span id="editor-status">LOADING MONACO</span></div></header>
-      <div class="workbench">
+  <section class="playground-page">
+      <header class="playground-head"><div><span>05 / SFC PLAYGROUND</span><h1>Code. Compile.<br><em>See it breathe.</em></h1>
+      <p>A self-hosted Monaco workspace with an isolated live preview. Edit the template, class behavior, or styles; the preview recompiles after every pause.</p></div><div class="playground-status"><i></i><span id="editor-status">LOADING MONACO</span></div></header>
+      <div class="workbench">A self-hosted Monaco workspace with an isolated live preview. Edit the template, class behavior, or styles; the preview recompiles after every pause.
         <div class="workbench-bar"><div class="file-tab"><i>S</i><span>Counter.sfc</span><b>●</b></div><div class="workbench-actions"><button id="format">FORMAT</button><button id="reset">RESET</button><button class="run" id="run">RUN <span>▶</span></button></div></div>
         <div class="workspace">
           <div class="editor-pane"><div id="editor" aria-label="SFC Monaco editor"><textarea id="editor-fallback" spellcheck="false"></textarea></div><footer><span>SFC</span><b id="position">Ln 1, Col 1</b><b>UTF-8</b><b>Spaces: 2</b></footer></div>
@@ -11,13 +11,10 @@
       </div>
       <div class="playground-notes"><article><span>01</span><h3>Real Monaco</h3><p>The same editor core that powers VS Code, self-hosted with its worker and a custom SFC tokenizer.</p></article><article><span>02</span><h3>Safe preview boundary</h3><p>User code executes inside a sandboxed, opaque-origin iframe—not in the documentation application.</p></article><article><span>03</span><h3>Fast feedback</h3><p>Template and style blocks render directly; compatible browser JavaScript custom-element classes execute live.</p></article></div>
       <a class="doc-next" href="/stress-testing"><span>FINAL CHAPTER<strong>Put the framework under load</strong></span><i>→</i></a>
-    </section>
-  </sfc-doc-shell>
+  </section>
 </template>
 
 <script lang="ts">
-import './DocsStyles.sfc'; import './Shell.sfc';
-
 const initialSource = `<template>
   <main class="counter-card">
     <span>LIVE SFC COMPONENT</span>
@@ -34,10 +31,8 @@ export default class extends HTMLElement {
   count = 0;
 
   connectedCallback() {
-    Promise.resolve().then(() => {
-      this.querySelector('.decrease')?.addEventListener('click', () => this.update(-1));
-      this.querySelector('.increase')?.addEventListener('click', () => this.update(1));
-    });
+    this.querySelector('.decrease')?.addEventListener('click', () => this.update(-1));
+    this.querySelector('.increase')?.addEventListener('click', () => this.update(1));
   }
 
   update(delta) {
@@ -63,21 +58,19 @@ export default class extends HTMLElement {
   private cleanup: Array<() => void> = [];
 
   connectedCallback() {
-    Promise.resolve().then(() => {
-      const fallback = this.querySelector('#editor-fallback') as HTMLTextAreaElement;
-      fallback.value = initialSource;
-      fallback.addEventListener('input', this.scheduleCompile);
-      this.cleanup.push(() => fallback.removeEventListener('input', this.scheduleCompile));
-      this.bindButton('#run', () => this.compile());
-      this.bindButton('#reset', () => { this.setValue(initialSource); this.compile(); });
-      this.bindButton('#format', () => this.editor?.getAction('editor.action.formatDocument')?.run());
-      this.querySelectorAll('[data-width]').forEach(button => {
-        const handler = () => this.setPreviewWidth(button.getAttribute('data-width'), button);
-        button.addEventListener('click', handler); this.cleanup.push(() => button.removeEventListener('click', handler));
-      });
-      this.loadMonaco();
-      this.compile();
+    const fallback = this.querySelector('#editor-fallback') as HTMLTextAreaElement;
+    fallback.value = initialSource;
+    fallback.addEventListener('input', this.scheduleCompile);
+    this.cleanup.push(() => fallback.removeEventListener('input', this.scheduleCompile));
+    this.bindButton('#run', () => this.compile());
+    this.bindButton('#reset', () => { this.setValue(initialSource); this.compile(); });
+    this.bindButton('#format', () => this.editor?.getAction('editor.action.formatDocument')?.run());
+    this.querySelectorAll('[data-width]').forEach(button => {
+      const handler = () => this.setPreviewWidth(button.getAttribute('data-width'), button);
+      button.addEventListener('click', handler); this.cleanup.push(() => button.removeEventListener('click', handler));
     });
+    this.loadMonaco();
+    this.compile();
   }
 
   disconnectedCallback() { clearTimeout(this.debounce); this.cleanup.splice(0).forEach(fn => fn()); this.editor?.dispose(); this.editor = null; }
@@ -118,7 +111,7 @@ export default class extends HTMLElement {
       if(!template) throw new Error('Add a <template> block to render the preview.');
       const tag=script.match(/static\s+(?:tag|\[['"]tag['"]\])\s*=\s*['"]([a-z][\w-]*-[\w-]+)['"]/)?.[1] || 'play-preview';
       script=script.replace(/export\s+default\s+class/, 'class UserComponent');
-      const executable=script.trim() ? `${script}\nclass PreviewElement extends UserComponent { connectedCallback(){ if(super.connectedCallback) super.connectedCallback(); if(!this.__mounted){ this.__mounted=true; this.insertAdjacentHTML('beforeend', ${JSON.stringify(template)}); } } }\ncustomElements.define(${JSON.stringify(tag)}, PreviewElement);` : `customElements.define(${JSON.stringify(tag)}, class extends HTMLElement { connectedCallback(){ this.innerHTML=${JSON.stringify(template)}; } });`;
+      const executable=script.trim() ? `${script}\nclass PreviewElement extends UserComponent { connectedCallback(){ if(!this.__mounted){ this.__mounted=true; this.insertAdjacentHTML('beforeend', ${JSON.stringify(template)}); } if(super.connectedCallback) super.connectedCallback(); } }\ncustomElements.define(${JSON.stringify(tag)}, PreviewElement);` : `customElements.define(${JSON.stringify(tag)}, class extends HTMLElement { connectedCallback(){ this.innerHTML=${JSON.stringify(template)}; } });`;
       const escapedScript=executable.replace(/<\/script/gi,'<\\/script');
       const html=`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><${'style'}>*{box-sizing:border-box}html,body{margin:0;min-height:100%}${style}</${'style'}></head><body><${tag}></${tag}><script>window.addEventListener('error',e=>document.body.dataset.error=e.message);${escapedScript}<\/script></body></html>`;
       (this.querySelector('#preview') as HTMLIFrameElement).srcdoc=html; this.showDiagnostic(null); this.setStatus('PREVIEW LIVE');

@@ -14,9 +14,8 @@ export default class extends HTMLElement {
   static tag = "shop-example";
 
   connectedCallback() {
-    Promise.resolve().then(() => {
-      // The generated template is attached by this point.
-    });
+    // Route params, template, styles, and reactive fields are ready here.
+    this.querySelector('main')?.classList.add('ready');
   }
 
   disconnectedCallback() {
@@ -56,8 +55,10 @@ shop-account h2 {
 
 ## Lifecycle
 
-- Route parameters are populated before the user component's `connectedCallback`.
-- Defer DOM queries to a microtask when following the class-style shop pattern.
+- Route parameters, the compiled template, component styles, and reactive fields
+  are ready before the user component's `connectedCallback`.
+- Query the component DOM directly inside `connectedCallback`; no promise or
+  microtask wrapper is required.
 - Guard against duplicate listener attachment when a component can reconnect.
 - Remove window/document listeners and abort requests in `disconnectedCallback`.
 - Query `this` for light DOM and `this.shadowRoot` for shadow DOM.

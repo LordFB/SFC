@@ -94,14 +94,6 @@ receive versioned updates and the component unsubscribes during teardown. The
 advanced chapter demonstrates the API, while the stress lab measures concurrent
 writes, persistence, event delivery, and end-to-end latency in the browser.
 
-## Playground isolation
-
-Monaco is installed and served locally from a narrow `/vendor/monaco/` mapping.
-The playground preview runs in a sandboxed iframe, so experimental component
-scripts cannot reach the documentation shell. It supports editable template,
-script, and style blocks, debounced preview refreshes, manual runs, formatting,
-reset, diagnostics, and responsive viewport presets.
-
 ## Commands
 
 ```bash
@@ -125,6 +117,3 @@ server.js               Development transform/API server
 server.prod.js          Production/preview static and API server
 test/                    Unit, integration, security, and load-oriented tests
 ```
-
-The legacy shop UI has been removed. A small set of shop/auth backend modules is
-retained as a security and API integration fixture for the framework test suite.

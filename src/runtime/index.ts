@@ -231,14 +231,15 @@ export function defineComponent(optsOrCtor: any) {
             (this as any).queryParams = queryParams;
             (this as any).params = { ...routeParams, ...queryParams };
           }
-          // call original
-          try { if (super.connectedCallback) super.connectedCallback(); } catch (e) { console.error(e); }
           // mountRoot: prefer a created shadow (this.shadow), then native shadowRoot, then the element itself
           const mountRoot: Element | ShadowRoot = (this as any).shadow || (this as any).shadowRoot || (this as any);
-          // inject template if available using cached fragments
-          if ((this.constructor as any).__sfc_template) {
+          // Mount the compiled template before user lifecycle code. This makes
+          // connectedCallback DOM-ready by default and avoids forcing every SFC
+          // author to schedule a microtask before querying their own template.
+          if ((this.constructor as any).__sfc_template && !(this as any).__sfc_template_mounted) {
             const frag = getTemplateFragment((this.constructor as any).__sfc_template);
             mountRoot.appendChild(frag);
+            (this as any).__sfc_template_mounted = true;
           }
           // attach global styles first so shadow roots receive them, then attach component styles
           try {
@@ -248,7 +249,11 @@ export function defineComponent(optsOrCtor: any) {
           ((this.constructor as any).__sfc_attach || (() => {}))(mountRoot);
           connectImagePreviewCache(mountRoot);
           connectRealtimeComponent(this as any, mountRoot);
-          // defer wiring to next microtask so subclass connectedCallback can finish DOM changes
+          interpolateTemplate(mountRoot, (this as any).params || {});
+          // The user's callback receives route params and a fully mounted,
+          // styled template synchronously.
+          try { if (super.connectedCallback) super.connectedCallback(); } catch (e) { console.error(e); }
+          // Defer decorator wiring so the callback can still make final DOM changes.
           try {
             Promise.resolve().then(()=>{
               try {
@@ -352,8 +357,6 @@ export function defineComponent(optsOrCtor: any) {
                   // Cache wiring metadata on constructor for future instances
                   (this.constructor as any).__sfc_wiring_cache = wiringCache;
                 }
-                // interpolate template (params already set before super.connectedCallback)
-                interpolateTemplate(mountRoot, (this as any).params || {});
               } catch (e) { console.error(e); }
             });
           } catch (e) { console.error(e); }

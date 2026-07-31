@@ -26,6 +26,7 @@
 export default class extends HTMLElement {
   static tag = 'sfc-doc-shell';
   static shadow = true;
+  static observedAttributes = ['section'];
   private onScroll = () => {
     const max = Math.max(1, document.documentElement.scrollHeight - innerHeight);
     const bar = this.shadowRoot?.querySelector('#progress') as HTMLElement | null;
@@ -36,14 +37,22 @@ export default class extends HTMLElement {
     this.toggleAttribute('menu-open', open);
     this.shadowRoot?.querySelector('#menu')?.setAttribute('aria-expanded', String(open));
   };
-  connectedCallback() {
-    Promise.resolve().then(() => {
-      const section = this.getAttribute('section');
-      this.shadowRoot?.querySelector(`[data-section="${section}"]`)?.classList.add('active');
-      this.shadowRoot?.querySelector('#menu')?.addEventListener('click', this.onMenu);
-      window.addEventListener('scroll', this.onScroll, { passive: true });
-      this.onScroll();
+  private syncSection() {
+    const section = this.getAttribute('section');
+    this.shadowRoot?.querySelectorAll('[data-section]').forEach(link => {
+      link.classList.toggle('active', link.getAttribute('data-section') === section);
     });
+    this.removeAttribute('menu-open');
+    this.shadowRoot?.querySelector('#menu')?.setAttribute('aria-expanded', 'false');
+    this.onScroll();
+  }
+  connectedCallback() {
+    this.syncSection();
+    this.shadowRoot?.querySelector('#menu')?.addEventListener('click', this.onMenu);
+    window.addEventListener('scroll', this.onScroll, { passive: true });
+  }
+  attributeChangedCallback(name: string, oldValue: string | null, newValue: string | null) {
+    if (name === 'section' && oldValue !== newValue && this.isConnected) this.syncSection();
   }
   disconnectedCallback() {
     this.shadowRoot?.querySelector('#menu')?.removeEventListener('click', this.onMenu);

@@ -1,13 +1,5 @@
 <template>
   <main class="lab">
-    <header class="topbar">
-      <a class="brand" href="/basics"><span class="brand-mark">S</span><span>SFC LABS</span></a>
-      <div class="topbar-actions">
-        <span class="connection"><i></i> REALTIME ONLINE</span>
-        <a class="back-link" href="/basics">Back to docs</a>
-      </div>
-    </header>
-
     <section class="hero">
       <div class="eyebrow"><span>EXPERIMENT 07</span><i></i><span>REALTIME DATABASE</span></div>
       <h1>Break it.<br><em>We dare you.</em></h1>
@@ -198,36 +190,34 @@ export default class extends HTMLElement {
   private latencyHistory: number[] = [];
 
   connectedCallback() {
-    Promise.resolve().then(() => {
-      const root = this.shadowRoot;
-      if (!root || this.cleanup.length) return;
-      this.listen(root.querySelector('#run-all'), 'click', this.runAll);
-      this.listen(root.querySelector('#increment'), 'click', this.increment);
-      this.listen(root.querySelector('#decrement'), 'click', this.decrement);
-      this.listen(root.querySelector('#message-form'), 'submit', this.publishMessage);
-      this.listen(root.querySelector('#clear-log'), 'click', this.clearLog);
-      root.querySelectorAll('[data-run]').forEach(button => {
-        const name = button.getAttribute('data-run') as TestName;
-        const handler = () => void this.runOne(name);
-        button.addEventListener('click', handler);
-        this.cleanup.push(() => button.removeEventListener('click', handler));
-      });
-      root.querySelectorAll('[data-tooltip-toggle]').forEach(button => {
-        const handler = (event: Event) => this.toggleMetricTooltip(event.currentTarget as HTMLButtonElement);
-        button.addEventListener('click', handler);
-        this.cleanup.push(() => button.removeEventListener('click', handler));
-      });
-      this.listen(root, 'pointerdown', this.closeTooltipInside);
-      window.addEventListener('pointerdown', this.closeTooltipFromOutside);
-      window.addEventListener('keydown', this.closeTooltipFromKeyboard);
-      this.cleanup.push(() => window.removeEventListener('pointerdown', this.closeTooltipFromOutside));
-      this.cleanup.push(() => window.removeEventListener('keydown', this.closeTooltipFromKeyboard));
-      this.cleanup.push(this.sharedCounter.subscribe((_value, snapshot) => {
-        this.text('#shared-version', String(snapshot?.version || 0));
-      }));
-      this.renderSuiteInsight();
-      this.log('PUBSUB', 'Lifecycle subscription connected; shared values are live.');
+    const root = this.shadowRoot;
+    if (!root || this.cleanup.length) return;
+    this.listen(root.querySelector('#run-all'), 'click', this.runAll);
+    this.listen(root.querySelector('#increment'), 'click', this.increment);
+    this.listen(root.querySelector('#decrement'), 'click', this.decrement);
+    this.listen(root.querySelector('#message-form'), 'submit', this.publishMessage);
+    this.listen(root.querySelector('#clear-log'), 'click', this.clearLog);
+    root.querySelectorAll('[data-run]').forEach(button => {
+      const name = button.getAttribute('data-run') as TestName;
+      const handler = () => void this.runOne(name);
+      button.addEventListener('click', handler);
+      this.cleanup.push(() => button.removeEventListener('click', handler));
     });
+    root.querySelectorAll('[data-tooltip-toggle]').forEach(button => {
+      const handler = (event: Event) => this.toggleMetricTooltip(event.currentTarget as HTMLButtonElement);
+      button.addEventListener('click', handler);
+      this.cleanup.push(() => button.removeEventListener('click', handler));
+    });
+    this.listen(root, 'pointerdown', this.closeTooltipInside);
+    window.addEventListener('pointerdown', this.closeTooltipFromOutside);
+    window.addEventListener('keydown', this.closeTooltipFromKeyboard);
+    this.cleanup.push(() => window.removeEventListener('pointerdown', this.closeTooltipFromOutside));
+    this.cleanup.push(() => window.removeEventListener('keydown', this.closeTooltipFromKeyboard));
+    this.cleanup.push(this.sharedCounter.subscribe((_value, snapshot) => {
+      this.text('#shared-version', String(snapshot?.version || 0));
+    }));
+    this.renderSuiteInsight();
+    this.log('PUBSUB', 'Lifecycle subscription connected; shared values are live.');
   }
 
   disconnectedCallback() {
@@ -602,14 +592,7 @@ button, a { -webkit-tap-highlight-color: transparent; }
   linear-gradient(rgba(255,255,255,.018) 1px, transparent 1px),
   linear-gradient(90deg, rgba(255,255,255,.018) 1px, transparent 1px),
   #0a0c0b; background-size: auto, 42px 42px, 42px 42px, auto; }
-.topbar { height: 72px; padding: 0 clamp(22px, 5vw, 76px); display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #252925; background: rgba(10,12,11,.76); backdrop-filter: blur(20px); }
-.brand { display: flex; align-items: center; gap: 12px; color: #f5f7f3; text-decoration: none; font-size: 12px; font-weight: 850; letter-spacing: 2.4px; }
-.brand-mark { width: 31px; height: 31px; display: grid; place-items: center; color: #0a0c0b; border-radius: 3px; background: #c4ff4d; font-size: 17px; font-weight: 950; transform: rotate(-4deg); }
-.topbar-actions { display: flex; align-items: center; gap: 25px; }
-.connection { display: flex; align-items: center; gap: 8px; color: #8d978d; font-family: ui-monospace, monospace; font-size: 9px; letter-spacing: 1px; }
-.connection i { width: 7px; height: 7px; border-radius: 50%; background: #c4ff4d; box-shadow: 0 0 13px #c4ff4d; animation: pulse 1.8s infinite; }
-.back-link { color: #d7ddd4; text-decoration: none; font-size: 11px; border-bottom: 1px solid #687066; }
-.hero { max-width: 1260px; margin: 0 auto; padding: 102px clamp(22px, 5vw, 76px) 70px; position: relative; }
+.hero { max-width: 1260px; margin: 0 auto; padding: 70px clamp(22px, 5vw, 76px); position: relative; }
 .hero::after { content: 'PUB/SUB'; position: absolute; right: 1%; top: 45px; color: transparent; -webkit-text-stroke: 1px rgba(255,255,255,.06); font-size: clamp(68px, 12vw, 170px); font-weight: 950; letter-spacing: -9px; pointer-events: none; }
 .eyebrow { display: flex; align-items: center; gap: 11px; color: #a6afa4; font-family: ui-monospace, monospace; font-size: 10px; letter-spacing: 1.7px; }
 .eyebrow i { width: 35px; height: 1px; background: #c4ff4d; }
@@ -716,7 +699,6 @@ h1 em { color: #c4ff4d; font-family: Georgia, serif; font-weight: 400; }
 #activity-log time { color: #c4ff4d; }
 footer { max-width: 1260px; margin: 0 auto; padding: 34px 0 55px; display: flex; justify-content: space-between; color: #4f574f; font-family: ui-monospace, monospace; font-size: 8px; letter-spacing: 1.1px; }
 footer b { color: #687168; }
-@keyframes pulse { 50% { opacity: .35; box-shadow: 0 0 4px #c4ff4d; } }
 @media (max-width: 900px) {
   .scoreboard { grid-template-columns: repeat(2, 1fr); }
   .scoreboard article:nth-child(2) { border-right: 0; }
@@ -730,7 +712,6 @@ footer b { color: #687168; }
   .test-section, .console-section { margin-inline: 20px; }
 }
 @media (max-width: 620px) {
-  .topbar { height: 61px; }.connection { display: none; }
   .hero { padding-top: 68px; }.hero::after { display: none; }
   h1 { font-size: 58px; letter-spacing: -4px; }
   .hero-actions, .section-heading { align-items: stretch; flex-direction: column; }
@@ -743,7 +724,6 @@ footer b { color: #687168; }
   .test-card.wide { grid-column: auto; }
   footer { padding-inline: 20px; flex-direction: column; gap: 8px; }
 }
-@media (prefers-reduced-motion: reduce) { .connection i { animation: none; } }
 </style>
 
 <route path="/stress-testing" methods="GET" />
