@@ -28,12 +28,16 @@ const STATIC_DIR = path.join(__dirname, 'dist', 'public');
 let shopApiHandler = null;
 let realtimeService = null;
 if (DEMO_SERVICES_ENABLED) {
-  const [{ createShopApi }, { createRealtimeService, createPublicDemoRealtimeAuthorizer }] = await Promise.all([
-    import('./shop-api.js'), import('./realtime-db.js'),
-  ]);
-  shopApiHandler = createShopApi({ production: !PREVIEW_MODE, port: PORT });
+  const { createRealtimeService, createPublicDemoRealtimeAuthorizer } = await import('./realtime-db.js');
+  let authorizePrivateRealtime = async () => null;
+  const shopAuthConfigured = Boolean(process.env.AUTH_ORIGIN && process.env.AUTH_RP_ID);
+  if (PREVIEW_MODE || shopAuthConfigured) {
+    const { createShopApi } = await import('./shop-api.js');
+    shopApiHandler = createShopApi({ production: !PREVIEW_MODE, port: PORT });
+    authorizePrivateRealtime = shopApiHandler.authorizeRealtime;
+  }
   realtimeService = createRealtimeService({
-    authorize: createPublicDemoRealtimeAuthorizer(shopApiHandler.authorizeRealtime),
+    authorize: createPublicDemoRealtimeAuthorizer(authorizePrivateRealtime),
   });
 }
 const SECURITY_HEADERS = {
@@ -153,6 +157,12 @@ async function handle(req, res) {
   }
 
   if (!DEMO_SERVICES_ENABLED && (urlPath.startsWith('/__sfc/realtime') || urlPath.startsWith('/shop/api/'))) {
+    res.writeHead(404, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+    res.end(JSON.stringify({ error: 'Not found' }));
+    return;
+  }
+
+  if (!shopApiHandler && urlPath.startsWith('/shop/api/')) {
     res.writeHead(404, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
     res.end(JSON.stringify({ error: 'Not found' }));
     return;

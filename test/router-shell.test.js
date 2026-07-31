@@ -37,3 +37,11 @@ test('production hides demo-only routes when server capabilities are unavailable
   assert.match(server, /urlPath === '\/__sfc\/capabilities'/);
   assert.match(server, /demoServices: DEMO_SERVICES_ENABLED/);
 });
+
+test('production can mount public realtime demos without shop authentication', () => {
+  const server = readFileSync(new URL('../server.prod.js', import.meta.url), 'utf8');
+
+  assert.match(server, /const shopAuthConfigured = Boolean\(process\.env\.AUTH_ORIGIN && process\.env\.AUTH_RP_ID\)/);
+  assert.match(server, /let authorizePrivateRealtime = async \(\) => null/);
+  assert.match(server, /createPublicDemoRealtimeAuthorizer\(authorizePrivateRealtime\)/);
+});
