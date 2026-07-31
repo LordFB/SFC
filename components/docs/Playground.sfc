@@ -97,21 +97,64 @@ export default class extends HTMLElement {
       defaultToken: '',
       tokenizer: {
         root: [
-          [/<[t]emplate\b[^>]*>/i, { token:'tag.sfc', switchTo:'@template', nextEmbedded:'html' }],
-          [/<[s]cript\b(?=[^>]*\blang\s*=\s*["'](?:ts|typescript)["'])[^>]*>/i, { token:'tag.sfc', switchTo:'@script', nextEmbedded:'typescript' }],
-          [/<[s]cript\b[^>]*>/i, { token:'tag.sfc', switchTo:'@script', nextEmbedded:'javascript' }],
-          [/<[s]tyle\b(?=[^>]*\blang\s*=\s*["']scss["'])[^>]*>/i, { token:'tag.sfc', switchTo:'@style', nextEmbedded:'scss' }],
-          [/<[s]tyle\b[^>]*>/i, { token:'tag.sfc', switchTo:'@style', nextEmbedded:'css' }],
+          [/<[t]emplate\b[^>]*>/i, { token:'tag.sfc', next:'template' }],
+          [/<[s]cript\b[^>]*>/i, { token:'tag.sfc', next:'script' }],
+          [/<[s]tyle\b[^>]*>/i, { token:'tag.sfc', next:'style' }],
           [/<[r]oute\b[^>]*\/>/i, 'tag.sfc'],
-          [/<[r]oute\b[^>]*>/i, { token:'tag.sfc', switchTo:'@route', nextEmbedded:'html' }],
+          [/<[r]oute\b[^>]*>/i, { token:'tag.sfc', next:'route' }],
           [/<\/(?:template|script|style|route)\s*>/i, 'tag.sfc'],
           [/\s+/, 'white'],
           [/./, 'invalid']
         ],
-        template: [[/<\/template/, { token:'@rematch', switchTo:'@root', nextEmbedded:'@pop' }]],
-        script: [[/<\/script/, { token:'@rematch', switchTo:'@root', nextEmbedded:'@pop' }]],
-        style: [[/<\/style/, { token:'@rematch', switchTo:'@root', nextEmbedded:'@pop' }]],
-        route: [[/<\/route/, { token:'@rematch', switchTo:'@root', nextEmbedded:'@pop' }]]
+        template: [
+          [/<\/template\s*>/i, { token:'tag.sfc', next:'@'+'pop' }],
+          [/<!--[\s\S]*?-->/, 'comment'],
+          [/\{\{\s*[a-zA-Z_$][\w$]*\s*\}\}/, 'variable'],
+          [/<\/?[a-z][\w-]*/i, 'tag'],
+          [/[a-zA-Z_:][\w:.-]*(?=\s*=)/, 'attribute.name'],
+          [/"[^"]*"|'[^']*'/, 'string'],
+          [/\/?>/, 'tag'],
+          [/[^<{]+/, ''],
+          [/./, '']
+        ],
+        script: [
+          [/<\/script\s*>/i, { token:'tag.sfc', next:'@'+'pop' }],
+          [/\/\/.*$/, 'comment'],
+          [/\/\*[\s\S]*?\*\//, 'comment'],
+          [/`(?:\\.|[^`])*`/, 'string'],
+          [/"(?:\\.|[^"])*"|'(?:\\.|[^'])*'/, 'string'],
+          [/\b(?:export|default|class|extends|static|private|public|protected|const|let|var|if|else|for|while|return|new|this|super|typeof|instanceof|async|await|try|catch|throw|true|false|null|undefined)\b/, 'keyword'],
+          [/\b(?:string|number|boolean|unknown|any|void|HTMLElement|Element|EventListener)\b/, 'type'],
+          [/\b(?:0[xX][\da-fA-F]+|\d+(?:\.\d+)?)\b/, 'number'],
+          [/[a-zA-Z_$][\w$]*/, 'identifier'],
+          [/[{}[\]()]/, 'delimiter.bracket'],
+          [/[;,.]/, 'delimiter'],
+          [/[=><!~?:&|+\-*\/%^]+/, 'operator'],
+          [/\s+/, 'white'],
+          [/./, '']
+        ],
+        style: [
+          [/<\/style\s*>/i, { token:'tag.sfc', next:'@'+'pop' }],
+          [/\/\*[\s\S]*?\*\//, 'comment'],
+          [/@[\w-]+/, 'keyword'],
+          [/--[\w-]+/, 'variable'],
+          [/#(?:[\da-fA-F]{3,8})\b/, 'number.hex'],
+          [/-?(?:\d*\.)?\d+(?:px|rem|em|vh|vw|%|s|ms|deg)?\b/, 'number'],
+          [/"[^"]*"|'[^']*'/, 'string'],
+          [/[a-zA-Z-]+(?=\s*:)/, 'attribute.name'],
+          [/[.#]?[a-zA-Z_][\w-]*/, 'tag'],
+          [/[{}()]/, 'delimiter.bracket'],
+          [/[,:;]/, 'delimiter'],
+          [/\s+/, 'white'],
+          [/./, '']
+        ],
+        route: [
+          [/<\/route\s*>/i, { token:'tag.sfc', next:'@'+'pop' }],
+          [/[a-zA-Z_:][\w:.-]*(?=\s*=)/, 'attribute.name'],
+          [/"[^"]*"|'[^']*'/, 'string'],
+          [/\s+/, 'white'],
+          [/./, '']
+        ]
       }
     });
     monaco.languages.setLanguageConfiguration('sfc', { brackets:[['<','>'],['{','}'],['[',']'],['(',')']], autoClosingPairs:[{open:'<',close:'>'},{open:'{',close:'}'},{open:'[',close:']'},{open:'(',close:')'},{open:'"',close:'"'},{open:"'",close:"'"}] });

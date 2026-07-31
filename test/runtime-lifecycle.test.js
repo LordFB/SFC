@@ -43,18 +43,18 @@ test('template directives bind component calls and instance hover styles without
   assert.match(runtime, /splitTopLevel\(object\[1\], ',;'\)/, 'hover CSS should accept comma and semicolon declaration separators');
 });
 
-test('playground delegates SFC blocks to Monaco native language tokenizers', () => {
+test('playground tokenizes SFC blocks without Monaco nested-language state', () => {
   const playground = readFileSync(new URL('../components/docs/Playground.sfc', import.meta.url), 'utf8');
   const packageJson = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
 
   assert.equal(packageJson.dependencies['monaco-editor'], '0.52.2', 'the self-hosted AMD loader requires the last supported AMD release');
 
-  for (const language of ['html', 'javascript', 'typescript', 'css', 'scss']) {
-    assert.match(playground, new RegExp(`nextEmbedded:'${language}'`), `playground should embed Monaco ${language} highlighting`);
+  assert.doesNotMatch(playground, /nextEmbedded/, 'the AMD Monaco build must not enter its unstable nested-language tokenizer');
+  for (const state of ['template', 'script', 'style', 'route']) {
+    assert.match(playground, new RegExp(`${state}: \\[`), `playground should define a ${state} tokenizer state`);
   }
-  assert.match(playground, /switchTo:'@template'.*nextEmbedded:'html'/, 'embedded tokenization must leave the root state before entering HTML');
-  assert.match(playground, /switchTo:'@root'.*nextEmbedded:'@pop'/, 'closing SFC blocks should switch back without popping an empty state stack');
-  assert.match(playground, /token:'@rematch'.*nextEmbedded:'@pop'/, 'closing SFC blocks should return to the outer tokenizer');
+  assert.doesNotMatch(playground, /next:'@(template|script|style|route|pop)'/, 'Monaco state strings must survive the SFC decorator transform');
+  assert.match(playground, /token:'tag\.sfc', next:'@'\+'pop'/, 'closing SFC blocks should safely return to the root tokenizer');
   assert.match(playground, /token:'tag\.sfc'/, 'SFC block boundaries should retain distinct highlighting');
 });
 
