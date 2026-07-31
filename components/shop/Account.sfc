@@ -1,0 +1,207 @@
+<template>
+  <div class="shop-layout">
+    <shop-nav></shop-nav>
+    <main class="account-page">
+      <div id="account-content" class="account-card">
+        <div class="loading">Loading account...</div>
+      </div>
+    </main>
+  </div>
+</template>
+
+<script lang="ts">
+export default class extends HTMLElement {
+  static tag = "shop-account";
+  session = null;
+
+  connectedCallback() {
+    Promise.resolve().then(() => {
+      this.setupEvents();
+      this.load();
+    });
+  }
+
+  setupEvents() {
+    this.addEventListener('submit', async (event) => {
+      const form = event.target as HTMLFormElement;
+      event.preventDefault();
+      if (form.id === 'login-form') await this.login(form);
+      if (form.id === 'register-form') await this.register(form);
+      if (form.id === 'password-form') await this.changePassword(form);
+    });
+    this.addEventListener('click', async (event) => {
+      const button = (event.target as HTMLElement).closest('button') as HTMLButtonElement;
+      if (!button || !['logout-button', 'logout-all-button'].includes(button.id)) return;
+      try {
+        button.disabled = true;
+        await window.shopAuth.logout(button.id === 'logout-all-button');
+        await this.load();
+      } catch (error) {
+        this.showMessage(error.message || 'Sign out failed.', true);
+        button.disabled = false;
+      }
+    });
+  }
+
+  async load() {
+    this.session = await window.shopAuth.getSession(true);
+    this.render();
+  }
+
+  async login(form) {
+    const email = (form.querySelector('#login-email') as HTMLInputElement).value.trim();
+    const password = (form.querySelector('#login-password') as HTMLInputElement).value;
+    await this.runForm(form, 'Signing in…', async () => {
+      await window.shopAuth.login(email, password);
+      this.continueOrLoad();
+    });
+  }
+
+  async register(form) {
+    const email = (form.querySelector('#register-email') as HTMLInputElement).value.trim();
+    const password = (form.querySelector('#register-password') as HTMLInputElement).value;
+    const confirmation = (form.querySelector('#register-confirmation') as HTMLInputElement).value;
+    if (password !== confirmation) {
+      this.showMessage('Passwords do not match.', true);
+      return;
+    }
+    await this.runForm(form, 'Creating account…', async () => {
+      await window.shopAuth.register(email, password);
+      this.continueOrLoad();
+    });
+  }
+
+  async changePassword(form) {
+    const currentPassword = (form.querySelector('#current-password') as HTMLInputElement).value;
+    const password = (form.querySelector('#new-password') as HTMLInputElement).value;
+    const confirmation = (form.querySelector('#new-password-confirmation') as HTMLInputElement).value;
+    if (password !== confirmation) {
+      this.showMessage('New passwords do not match.', true);
+      return;
+    }
+    await this.runForm(form, 'Changing password…', async () => {
+      await window.shopAuth.changePassword(currentPassword, password);
+      form.reset();
+      this.showMessage('Password changed. Other sessions were signed out.');
+    });
+  }
+
+  async runForm(form, pendingText, operation) {
+    const button = form.querySelector('button[type="submit"]') as HTMLButtonElement;
+    const original = button.textContent;
+    button.disabled = true;
+    button.textContent = pendingText;
+    try {
+      await operation();
+    } catch (error) {
+      this.showMessage(error.message || 'Authentication failed.', true);
+    } finally {
+      button.disabled = false;
+      button.textContent = original;
+    }
+  }
+
+  continueOrLoad() {
+    const returnTo = new URLSearchParams(window.location.search).get('returnTo');
+    if (returnTo && returnTo.startsWith('/shop/') && !returnTo.startsWith('//')) {
+      window.location.href = returnTo;
+    } else {
+      this.load();
+    }
+  }
+
+  render() {
+    const content = this.querySelector('#account-content');
+    if (!this.session.authenticated) {
+      content.innerHTML = `
+        <h1>Customer account</h1>
+        <div id="account-message"></div>
+        <form id="login-form">
+          <h2>Sign in</h2>
+          <label for="login-email">Email</label>
+          <input id="login-email" type="email" autocomplete="username" required />
+          <label for="login-password">Password</label>
+          <input id="login-password" type="password" autocomplete="current-password" required />
+          <button class="btn btn-primary" type="submit">Sign in</button>
+        </form>
+        <div class="divider"><span>or</span></div>
+        <form id="register-form">
+          <h2>Create account</h2>
+          <label for="register-email">Email</label>
+          <input id="register-email" type="email" autocomplete="username" required />
+          <label for="register-password">Password</label>
+          <input id="register-password" type="password" minlength="12" maxlength="128" autocomplete="new-password" required />
+          <small>Use at least 12 characters. There is no email recovery.</small>
+          <label for="register-confirmation">Confirm password</label>
+          <input id="register-confirmation" type="password" minlength="12" maxlength="128" autocomplete="new-password" required />
+          <button class="btn btn-primary" type="submit">Create account</button>
+        </form>
+      `;
+      return;
+    }
+
+    content.innerHTML = `
+      <h1>Your account</h1>
+      <p class="account-email">${this.escape(this.session.user.email)}</p>
+      <div id="account-message"></div>
+      <form id="password-form">
+        <h2>Change password</h2>
+        <label for="current-password">Current password</label>
+        <input id="current-password" type="password" autocomplete="current-password" required />
+        <label for="new-password">New password</label>
+        <input id="new-password" type="password" minlength="12" maxlength="128" autocomplete="new-password" required />
+        <label for="new-password-confirmation">Confirm new password</label>
+        <input id="new-password-confirmation" type="password" minlength="12" maxlength="128" autocomplete="new-password" required />
+        <button class="btn btn-primary" type="submit">Change password</button>
+      </form>
+      <div class="session-actions">
+        <button class="btn btn-secondary" id="logout-button">Sign out here</button>
+        <button class="btn btn-danger" id="logout-all-button">Sign out everywhere</button>
+      </div>
+    `;
+  }
+
+  showMessage(message, error = false) {
+    const element = this.querySelector('#account-message');
+    if (!element) return;
+    element.className = error ? 'message error' : 'message success';
+    element.textContent = message;
+  }
+
+  escape(value) {
+    return String(value)
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#039;');
+  }
+}
+</script>
+
+<style>
+shop-account .shop-layout { min-height: 100vh; background: #f8f9fa; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+shop-account .account-page { max-width: 680px; margin: 0 auto; padding: 48px 20px; }
+shop-account .account-card { background: white; border-radius: 16px; padding: 32px; box-shadow: 0 8px 30px rgba(0,0,0,.08); }
+shop-account h1,
+shop-account h2 { margin-top: 0; color: #222; }
+shop-account form { display: grid; gap: 10px; margin: 24px 0; }
+shop-account label { font-weight: 600; margin-top: 6px; }
+shop-account input { padding: 12px; border: 1px solid #ccc; border-radius: 8px; font: inherit; }
+shop-account small { color: #666; }
+shop-account .divider { display: flex; align-items: center; gap: 12px; color: #888; margin: 26px 0; }
+shop-account .divider::before,
+shop-account .divider::after { content: ''; height: 1px; background: #ddd; flex: 1; }
+shop-account .session-actions { display: flex; gap: 12px; margin-top: 32px; }
+shop-account .btn-danger { background: #fff; color: #b42318; border: 1px solid #f0b4ae; }
+shop-account .message { padding: 10px; border-radius: 8px; margin: 12px 0; }
+shop-account .message.error { background: #fee4e2; color: #912018; }
+shop-account .message.success { background: #dcfae6; color: #086c3c; }
+shop-account .account-email { font-size: 1.1rem; }
+@media (max-width: 620px) {
+  shop-account .account-card { padding: 22px; }
+  shop-account .session-actions { flex-direction: column; }
+}
+</style>
+
+<route path="/shop/account" methods="GET" />

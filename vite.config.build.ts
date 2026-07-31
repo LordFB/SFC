@@ -1,12 +1,23 @@
 import { defineConfig } from 'vite';
+import { fileURLToPath, URL } from 'node:url';
 import sfcPlugin from './src/plugin';
+import { resolveShopPrerenderRoutes } from './shop-static-routes.js';
 
 /**
  * Build configuration for production.
  * Produces a single-bundle frontend in dist/public/.
  */
 export default defineConfig({
-  plugins: [sfcPlugin({ productionMode: true, persistCache: false })],
+  plugins: [sfcPlugin({
+    productionMode: true,
+    persistCache: false,
+    resolvePrerenderRoutes: resolveShopPrerenderRoutes
+  })],
+  resolve: {
+    alias: {
+      '@db': fileURLToPath(new URL('./shop-db.js', import.meta.url))
+    }
+  },
   build: {
     outDir: 'dist/public',
     emptyOutDir: true,
@@ -30,6 +41,9 @@ export default defineConfig({
   },
   esbuild: {
     target: 'esnext',
-    drop: ['debugger']
+    drop: ['debugger'],
+    // Keep actionable diagnostics in production, but remove routine framework,
+    // router, and component lifecycle noise.
+    pure: ['console.log', 'console.debug']
   }
 });

@@ -10,6 +10,7 @@
         <a href="/shop" class="nav-link">Home</a>
         <a href="/shop/products" class="nav-link">Products</a>
         <a href="/shop/orders" class="nav-link">My Orders</a>
+        <a href="/shop/account" class="nav-link" id="account-link">Sign in</a>
       </div>
       
       <a href="/shop/cart" class="cart-link">
@@ -23,43 +24,86 @@
 <script lang="ts">
 export default class extends HTMLElement {
   static tag = "shop-nav";
-  
+
+  cartListenerAttached = false;
+  cartRequest = null;
+  cartAbortController = null;
+
+  handleCartUpdated = (event) => {
+    const itemCount = event.detail?.item_count;
+    if (typeof itemCount === 'number') {
+      this.renderCartCount(itemCount);
+      return;
+    }
+    this.loadCartCount();
+  };
+
+  handleAuthChanged = () => this.loadAuthState();
+
   connectedCallback() {
+    if (this.cartListenerAttached) return;
+    this.cartListenerAttached = true;
+
+    window.addEventListener('cart-updated', this.handleCartUpdated);
+    window.addEventListener('shop-auth-changed', this.handleAuthChanged);
+
     // Defer to next microtask to ensure template is attached
     Promise.resolve().then(() => {
+      if (!this.isConnected) return;
       this.loadCartCount();
+      this.loadAuthState();
     });
-    
-    // Listen for cart updates
-    window.addEventListener('cart-updated', () => this.loadCartCount());
+  }
+
+  disconnectedCallback() {
+    window.removeEventListener('cart-updated', this.handleCartUpdated);
+    window.removeEventListener('shop-auth-changed', this.handleAuthChanged);
+    this.cartListenerAttached = false;
+    this.cartAbortController?.abort();
+    this.cartAbortController = null;
+    this.cartRequest = null;
   }
   
   async loadCartCount() {
-    try {
-      const sessionId = this.getSessionId();
-      const res = await fetch('/shop/api/cart', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'get', sessionId })
+    if (this.cartRequest) return this.cartRequest;
+
+    this.cartAbortController = new AbortController();
+    this.cartRequest = (async () => {
+      const data = await window.shopAuth.api('/shop/api/cart', {
+        body: { action: 'get' }
       });
-      const data = await res.json();
-      const countEl = this.querySelector('#cart-count');
-      if (countEl && data.item_count !== undefined) {
-        countEl.textContent = data.item_count;
-        countEl.classList.toggle('has-items', data.item_count > 0);
+      if (this.isConnected && data.item_count !== undefined) {
+        this.renderCartCount(data.item_count);
       }
+    })();
+
+    try {
+      await this.cartRequest;
     } catch (err) {
-      console.error('[shop-nav] Failed to load cart count:', err);
+      if (err?.name !== 'AbortError') {
+        console.error('[shop-nav] Failed to load cart count:', err);
+      }
+    } finally {
+      this.cartRequest = null;
+      this.cartAbortController = null;
     }
   }
-  
-  getSessionId() {
-    let sessionId = localStorage.getItem('shop_session');
-    if (!sessionId) {
-      sessionId = 'sess_' + Math.random().toString(36).substr(2, 9) + Date.now();
-      localStorage.setItem('shop_session', sessionId);
+
+  renderCartCount(itemCount) {
+    const countEl = this.querySelector('#cart-count');
+    if (!countEl) return;
+    countEl.textContent = itemCount;
+    countEl.classList.toggle('has-items', itemCount > 0);
+  }
+
+  async loadAuthState() {
+    try {
+      const session = await window.shopAuth.getSession(true);
+      const link = this.querySelector('#account-link');
+      if (link) link.textContent = session.authenticated ? 'Account' : 'Sign in';
+    } catch (err) {
+      console.error('[shop-nav] Failed to load authentication state:', err);
     }
-    return sessionId;
   }
 }
 </script>

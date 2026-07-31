@@ -7,15 +7,17 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { randomBytes, randomUUID } from 'crypto';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const dbPath = path.join(__dirname, 'shop.db');
+const dbPath = process.env.SHOP_DB_PATH || path.join(__dirname, 'shop.db');
 
 // Initialize database
 const db = new Database(dbPath);
 
 // Enable WAL mode for better performance
 db.pragma('journal_mode = WAL');
+db.pragma('foreign_keys = ON');
 
 // Create tables
 db.exec(`
@@ -64,7 +66,51 @@ db.exec(`
     FOREIGN KEY (order_id) REFERENCES orders(id),
     FOREIGN KEY (product_id) REFERENCES products(id)
   );
+
+  CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY,
+    email TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS sessions (
+    id TEXT PRIMARY KEY,
+    token_hash TEXT NOT NULL UNIQUE,
+    csrf_token TEXT NOT NULL,
+    user_id TEXT,
+    created_at INTEGER NOT NULL,
+    last_seen_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL,
+    authenticated_at INTEGER,
+    auth_last_seen_at INTEGER,
+    recent_auth_at INTEGER,
+    revoked_at INTEGER,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_sessions_token_hash ON sessions(token_hash);
+  CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
+
+  CREATE TABLE IF NOT EXISTS auth_rate_limits (
+    key TEXT PRIMARY KEY,
+    window_started_at INTEGER NOT NULL,
+    attempts INTEGER NOT NULL,
+    blocked_until INTEGER
+  );
 `);
+
+const orderColumns = db.prepare('PRAGMA table_info(orders)').all();
+if (!orderColumns.some(column => column.name === 'user_id')) {
+  db.exec('ALTER TABLE orders ADD COLUMN user_id TEXT REFERENCES users(id)');
+}
+db.exec('CREATE INDEX IF NOT EXISTS idx_orders_user_id ON orders(user_id)');
+
+const userColumns = db.prepare('PRAGMA table_info(users)').all();
+const hasLegacyUserHandle = userColumns.some(column => column.name === 'webauthn_user_id');
+if (!userColumns.some(column => column.name === 'password_hash')) {
+  db.exec('ALTER TABLE users ADD COLUMN password_hash TEXT');
+}
 
 // Seed products if empty
 const productCount = db.prepare('SELECT COUNT(*) as count FROM products').get();
@@ -132,26 +178,78 @@ const queries = {
   
   // Orders
   createOrder: db.prepare(`
-    INSERT INTO orders (session_id, customer_email, customer_name, shipping_address, total)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO orders (session_id, user_id, customer_email, customer_name, shipping_address, total)
+    VALUES (?, ?, ?, ?, ?, ?)
   `),
   addOrderItem: db.prepare(`
     INSERT INTO order_items (order_id, product_id, quantity, price)
     VALUES (?, ?, ?, ?)
   `),
-  getOrderById: db.prepare('SELECT * FROM orders WHERE id = ?'),
+  getOrderById: db.prepare('SELECT * FROM orders WHERE id = ? AND user_id = ?'),
+  getAllOrderIds: db.prepare('SELECT id FROM orders ORDER BY created_at DESC'),
   getOrderItems: db.prepare(`
     SELECT oi.*, p.name, p.image
     FROM order_items oi
     JOIN products p ON oi.product_id = p.id
     WHERE oi.order_id = ?
   `),
-  getOrdersBySession: db.prepare('SELECT * FROM orders WHERE session_id = ? ORDER BY created_at DESC'),
+  getOrdersByUser: db.prepare('SELECT * FROM orders WHERE user_id = ? ORDER BY created_at DESC'),
   updateStock: db.prepare('UPDATE products SET stock = stock - ? WHERE id = ? AND stock >= ?'),
+
+  // Users and hardened server sessions
+  createUser: db.prepare(hasLegacyUserHandle ? `
+    INSERT INTO users (id, webauthn_user_id, email, password_hash, created_at)
+    VALUES (?, ?, ?, ?, ?)
+  ` : `
+    INSERT INTO users (id, email, password_hash, created_at)
+    VALUES (?, ?, ?, ?)
+  `),
+  getUserById: db.prepare('SELECT * FROM users WHERE id = ?'),
+  getUserByEmail: db.prepare('SELECT * FROM users WHERE email = ?'),
+  updatePasswordHash: db.prepare('UPDATE users SET password_hash = ? WHERE id = ?'),
+  createSession: db.prepare(`
+    INSERT INTO sessions (
+      id, token_hash, csrf_token, created_at, last_seen_at, expires_at
+    ) VALUES (?, ?, ?, ?, ?, ?)
+  `),
+  getSessionByTokenHash: db.prepare('SELECT * FROM sessions WHERE token_hash = ? AND revoked_at IS NULL'),
+  getSessionById: db.prepare('SELECT * FROM sessions WHERE id = ? AND revoked_at IS NULL'),
+  touchSession: db.prepare('UPDATE sessions SET last_seen_at = ? WHERE id = ?'),
+  rotateSession: db.prepare('UPDATE sessions SET token_hash = ?, csrf_token = ?, last_seen_at = ? WHERE id = ?'),
+  authenticateSession: db.prepare(`
+    UPDATE sessions SET user_id = ?, authenticated_at = ?, auth_last_seen_at = ?,
+      recent_auth_at = ?, last_seen_at = ? WHERE id = ?
+  `),
+  touchAuthenticatedSession: db.prepare(`
+    UPDATE sessions SET last_seen_at = ?, auth_last_seen_at = ? WHERE id = ?
+  `),
+  markRecentAuth: db.prepare('UPDATE sessions SET recent_auth_at = ?, last_seen_at = ? WHERE id = ?'),
+  clearSessionAuth: db.prepare(`
+    UPDATE sessions SET user_id = NULL, authenticated_at = NULL,
+      auth_last_seen_at = NULL, recent_auth_at = NULL, last_seen_at = ? WHERE id = ?
+  `),
+  revokeSession: db.prepare('UPDATE sessions SET revoked_at = ? WHERE id = ?'),
+  revokeOtherUserSessions: db.prepare(`
+    UPDATE sessions SET revoked_at = ? WHERE user_id = ? AND id <> ? AND revoked_at IS NULL
+  `),
+  getRateLimit: db.prepare('SELECT * FROM auth_rate_limits WHERE key = ?'),
+  upsertRateLimit: db.prepare(`
+    INSERT INTO auth_rate_limits (key, window_started_at, attempts, blocked_until)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(key) DO UPDATE SET
+      window_started_at = excluded.window_started_at,
+      attempts = excluded.attempts,
+      blocked_until = excluded.blocked_until
+  `),
+  clearRateLimit: db.prepare('DELETE FROM auth_rate_limits WHERE key = ?'),
 };
 
 // API functions
 export const shopDb = {
+  close() {
+    db.close();
+  },
+
   // Products
   getAllProducts() {
     return queries.getAllProducts.all();
@@ -212,7 +310,7 @@ export const shopDb = {
   },
   
   // Orders
-  createOrder(sessionId, customerInfo) {
+  createOrder(sessionId, userId, customerInfo) {
     const cart = this.getCart(sessionId);
     if (cart.items.length === 0) throw new Error('Cart is empty');
     
@@ -220,6 +318,7 @@ export const shopDb = {
       // Create order
       const result = queries.createOrder.run(
         sessionId,
+        userId,
         customerInfo.email,
         customerInfo.name,
         customerInfo.address,
@@ -243,18 +342,102 @@ export const shopDb = {
     });
     
     const orderId = createOrderTx();
-    return this.getOrderById(orderId);
+    return this.getOrderById(orderId, userId);
   },
   
-  getOrderById(orderId) {
-    const order = queries.getOrderById.get(orderId);
+  getOrderById(orderId, userId) {
+    const order = queries.getOrderById.get(orderId, userId);
     if (!order) return null;
     order.items = queries.getOrderItems.all(orderId);
     return order;
   },
+
+  getAllOrderIds() {
+    return queries.getAllOrderIds.all().map(order => order.id);
+  },
   
-  getOrdersBySession(sessionId) {
-    return queries.getOrdersBySession.all(sessionId);
+  getOrdersByUser(userId) {
+    return queries.getOrdersByUser.all(userId);
+  },
+
+  createUser({ id = randomUUID(), email, passwordHash, now = Date.now() }) {
+    if (hasLegacyUserHandle) {
+      queries.createUser.run(id, randomBytes(32), email, passwordHash, now);
+    } else {
+      queries.createUser.run(id, email, passwordHash, now);
+    }
+    return queries.getUserById.get(id);
+  },
+
+  getUserById(id) {
+    return queries.getUserById.get(id);
+  },
+
+  getUserByEmail(email) {
+    return queries.getUserByEmail.get(email);
+  },
+
+  updatePasswordHash(userId, passwordHash) {
+    return queries.updatePasswordHash.run(passwordHash, userId).changes;
+  },
+
+  createSession({ id = randomUUID(), tokenHash, csrfToken, now = Date.now(), expiresAt }) {
+    queries.createSession.run(id, tokenHash, csrfToken, now, now, expiresAt);
+    return queries.getSessionById.get(id);
+  },
+
+  getSessionByTokenHash(tokenHash) {
+    return queries.getSessionByTokenHash.get(tokenHash);
+  },
+
+  getSessionById(id) {
+    return queries.getSessionById.get(id);
+  },
+
+  touchSession(id, now) {
+    queries.touchSession.run(now, id);
+  },
+
+  rotateSession(id, tokenHash, csrfToken, now) {
+    queries.rotateSession.run(tokenHash, csrfToken, now, id);
+    return queries.getSessionById.get(id);
+  },
+
+  authenticateSession(id, userId, now) {
+    queries.authenticateSession.run(userId, now, now, now, now, id);
+    return queries.getSessionById.get(id);
+  },
+
+  touchAuthenticatedSession(id, now) {
+    queries.touchAuthenticatedSession.run(now, now, id);
+  },
+
+  markRecentAuth(id, now) {
+    queries.markRecentAuth.run(now, now, id);
+  },
+
+  clearSessionAuth(id, now) {
+    queries.clearSessionAuth.run(now, id);
+  },
+
+  revokeSession(id, now) {
+    queries.revokeSession.run(now, id);
+  },
+
+  revokeOtherUserSessions(userId, currentSessionId, now) {
+    return queries.revokeOtherUserSessions.run(now, userId, currentSessionId).changes;
+  },
+
+  getRateLimit(key) {
+    return queries.getRateLimit.get(key);
+  },
+
+  saveRateLimit({ key, windowStartedAt, attempts, blockedUntil = null }) {
+    queries.upsertRateLimit.run(key, windowStartedAt, attempts, blockedUntil);
+  },
+
+  clearRateLimit(key) {
+    queries.clearRateLimit.run(key);
   }
 };
 

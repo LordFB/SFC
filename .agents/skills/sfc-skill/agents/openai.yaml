@@ -1,0 +1,4 @@
+interface:
+  display_name: "SFC Project Builder"
+  short_description: "Build and extend this SFC framework safely"
+  default_prompt: "Use $sfc-skill to build or update an SFC component in this project."

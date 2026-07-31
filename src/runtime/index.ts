@@ -1,3 +1,14 @@
+import {
+  connectImagePreviewCache,
+  stageImagePreviews
+} from './image-preview-cache';
+
+export {
+  configureImagePreviewCache,
+  DEFAULT_IMAGE_CACHE_MAX_SIZE,
+  IMAGE_CACHE_DISABLE_ATTRIBUTE
+} from './image-preview-cache';
+
 // Template fragment cache for performance
 const templateCache = new Map<string, DocumentFragment>();
 
@@ -9,7 +20,9 @@ function getTemplateFragment(html: string): DocumentFragment {
     frag = template.content;
     templateCache.set(html, frag);
   }
-  return frag.cloneNode(true) as DocumentFragment;
+  const clone = frag.cloneNode(true) as DocumentFragment;
+  stageImagePreviews(clone);
+  return clone;
 }
 
 export type ComponentOptions = {
@@ -218,6 +231,7 @@ export function defineComponent(optsOrCtor: any) {
             for (const g of globals) try { attachStyles(mountRoot as any, g); } catch (e) {}
           } catch (e) {}
           ((this.constructor as any).__sfc_attach || (() => {}))(mountRoot);
+          connectImagePreviewCache(mountRoot);
           // defer wiring to next microtask so subclass connectedCallback can finish DOM changes
           try {
             Promise.resolve().then(()=>{
@@ -396,6 +410,7 @@ export function defineComponent(optsOrCtor: any) {
       if (opts.connectedCallback) {
         try { opts.connectedCallback.call(this); } catch (e) { console.error(e); }
       }
+      connectImagePreviewCache(mountRoot);
       // if attributeChangedCallback is provided but observedAttributes is not,
       // set up a MutationObserver fallback to notify attribute changes
       if (typeof opts.attributeChangedCallback === 'function' && (!opts.observedAttributes || opts.observedAttributes.length === 0)) {

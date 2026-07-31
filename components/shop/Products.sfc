@@ -57,12 +57,9 @@
 
         async loadProducts() {
             try {
-                const res = await fetch('/shop/api/products', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ action: 'list' })
+                const data = await window.shopAuth.api('/shop/api/products', {
+                    body: { action: 'list' }
                 });
-                const data = await res.json();
                 this.products = data.products || [];
                 this.categories = data.categories || [];
                 this.filteredProducts = [...this.products];
@@ -148,20 +145,15 @@
             btn.textContent = 'Adding...';
 
             try {
-                const sessionId = this.getSessionId();
-                const res = await fetch('/shop/api/cart', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ action: 'add', sessionId, productId, quantity: 1 })
+                const data = await window.shopAuth.api('/shop/api/cart', {
+                    body: { action: 'add', productId, quantity: 1 }
                 });
-
-                const data = await res.json();
 
                 if (data.error) {
                     alert(data.error);
                 } else {
                     btn.textContent = '✓ Added!';
-                    window.dispatchEvent(new CustomEvent('cart-updated'));
+                    window.dispatchEvent(new CustomEvent('cart-updated', { detail: data }));
                     setTimeout(() => {
                         btn.textContent = 'Add to Cart';
                         btn.disabled = false;
@@ -177,14 +169,6 @@
             btn.disabled = false;
         }
 
-        getSessionId() {
-            let sessionId = localStorage.getItem('shop_session');
-            if (!sessionId) {
-                sessionId = 'sess_' + Math.random().toString(36).substr(2, 9) + Date.now();
-                localStorage.setItem('shop_session', sessionId);
-            }
-            return sessionId;
-        }
     }
 </script>
 

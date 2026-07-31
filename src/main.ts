@@ -3,6 +3,7 @@ const modules = import.meta.glob('../components/**/*.sfc', { eager: false });
 
 // Eagerly load global styles so shared appearance is applied immediately
 import '../components/GlobalStyles.sfc';
+import './auth-client';
 
 import { routes } from 'virtual:routes';
 import { parseRouteParams } from './runtime/index';
@@ -94,6 +95,19 @@ async function navigateToRoute(fullPath: string, pushState = true) {
         console.error('[router] matched route has no tag:', matchedRoute);
         return;
       }
+
+      const mountRoot = document.querySelector('#app') || document.body;
+
+      // Generated Jamstack pages already contain their route component. Adopt
+      // that element on first load instead of mounting a duplicate beside it.
+      if (!currentRouteElement) {
+        const generatedElement = mountRoot.querySelector(`:scope > ${matchedRoute.tag}`);
+        if (generatedElement) {
+          currentRouteElement = generatedElement as HTMLElement;
+          return;
+        }
+      }
+
       // Remove old element first to prevent flash from double-rendering
       const previous = currentRouteElement;
       if (previous) {
@@ -101,7 +115,7 @@ async function navigateToRoute(fullPath: string, pushState = true) {
       }
       // Then create and mount new component
       const el = document.createElement(matchedRoute.tag);
-      document.body.appendChild(el);
+      mountRoot.appendChild(el);
       currentRouteElement = el;
     };
 

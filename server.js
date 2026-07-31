@@ -18,7 +18,7 @@ import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import zlib from 'zlib';
 import { createHash } from 'crypto';
-import { shopDb } from './shop-db.js';
+import { createShopApi } from './shop-api.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -51,8 +51,11 @@ async function importTS(tsPath) {
 // Lazy-loaded modules
 let transformSFC;
 let getTransformCache;
+let esbuildTransform;
 
 async function initModules() {
+  const esbuild = await import('esbuild');
+  esbuildTransform = esbuild.transform;
   const transformer = await importTS('./src/transformer.ts');
   const cache = await importTS('./src/cache.ts');
   transformSFC = transformer.transformSFC;
@@ -63,6 +66,7 @@ async function initModules() {
 const args = process.argv.slice(2);
 const PORT = parseInt(args.find(a => a.startsWith('--port='))?.split('=')[1] || '5173', 10);
 const PROD_MODE = args.includes('--prod');
+const shopApiHandler = createShopApi({ production: PROD_MODE, port: PORT });
 
 // MIME types for common file extensions
 const MIME_TYPES = {
@@ -88,8 +92,78 @@ const MIME_TYPES = {
 // In-memory cache for transformed files
 const transformedCache = new Map();
 const staticCache = new Map();
+const scriptCache = new Map();
+const typescriptCache = new Map();
 const MAX_CACHE_SIZE = 100 * 1024 * 1024; // 100MB
 let currentCacheSize = 0;
+let routesCache = null;
+
+// Lightweight live-reload transport for the standalone dev server.
+const liveReloadClients = new Set();
+const fileWatchers = [];
+let reloadTimer = null;
+
+const LIVE_RELOAD_CLIENT = `
+<script>
+(() => {
+  const events = new EventSource('/__sfc_events');
+  events.addEventListener('reload', (event) => {
+    const change = JSON.parse(event.data);
+    console.debug('[sfc] reloading after change:', change.path);
+    location.reload();
+  });
+  events.onerror = () => console.debug('[sfc] waiting for dev server...');
+})();
+</script>`;
+
+function injectLiveReload(html) {
+  if (html.includes('/__sfc_events')) return html;
+  return html.includes('</body>')
+    ? html.replace('</body>', `${LIVE_RELOAD_CLIENT}\n</body>`)
+    : html + LIVE_RELOAD_CLIENT;
+}
+
+function invalidateFile(filePath) {
+  const absolutePath = path.resolve(filePath);
+  for (const cache of [transformedCache, scriptCache, typescriptCache, staticCache]) {
+    const cached = cache.get(absolutePath);
+    if (cached?.size) currentCacheSize = Math.max(0, currentCacheSize - cached.size);
+    cache.delete(absolutePath);
+  }
+  if (absolutePath.endsWith('.sfc')) routesCache = null;
+}
+
+function broadcastReload(changedPath) {
+  const relativePath = path.relative(__dirname, changedPath).replace(/\\/g, '/');
+  const message = `event: reload\ndata: ${JSON.stringify({ path: relativePath, time: Date.now() })}\n\n`;
+  for (const client of liveReloadClients) client.write(message);
+}
+
+function scheduleReload(changedPath) {
+  invalidateFile(changedPath);
+  clearTimeout(reloadTimer);
+  reloadTimer = setTimeout(() => broadcastReload(changedPath), 40);
+}
+
+function startFileWatcher() {
+  const watchTarget = (target, recursive, filter = () => true) => {
+    try {
+      const watcher = fs.watch(target, { recursive }, (_event, filename) => {
+        if (!filename) return;
+        const relativeName = String(filename);
+        if (!filter(relativeName)) return;
+        scheduleReload(path.resolve(target, relativeName));
+      });
+      fileWatchers.push(watcher);
+    } catch (error) {
+      console.warn(`[sfc] Unable to watch ${target}: ${error.message}`);
+    }
+  };
+
+  watchTarget(path.join(__dirname, 'components'), true, file => file.endsWith('.sfc'));
+  watchTarget(path.join(__dirname, 'src'), true, file => /\.(ts|js|css|scss)$/.test(file) && !file.endsWith('.jit.mjs'));
+  watchTarget(__dirname, false, file => file === 'index.html');
+}
 
 // ETag generation
 function generateETag(content) {
@@ -121,19 +195,6 @@ function compress(content, acceptEncoding) {
 
 // Rewrite bare module imports to use CDN (esm.sh)
 function rewriteBareImports(code) {
-  // Check if code uses prismjs - if so, replace with our virtual bundle
-  const usesPrism = /from\s+['"]prismjs['"]|import\s+['"]prismjs/.test(code);
-  
-  if (usesPrism) {
-    // Remove individual prism component imports - they'll be included in the virtual bundle
-    code = code.replace(/import\s+['"]prismjs\/components\/[^'"]+['"]\s*;?\n?/g, '');
-    // Rewrite main prismjs import to use our virtual prism bundle
-    code = code.replace(
-      /from\s+['"]prismjs['"]/g,
-      `from "/virtual:prism-bundle"`
-    );
-  }
-  
   // Handle: import ... from 'bare-specifier'
   code = code.replace(
     /from\s+['"]([^./][^'"]*)['"]/g,
@@ -149,10 +210,6 @@ function rewriteBareImports(code) {
       // Handle ?raw suffix - serve locally via /node_modules/ path
       if (specifier.endsWith('?raw')) {
         return `from "/node_modules/${specifier}"`;
-      }
-      // Skip prismjs - handled above
-      if (specifier === 'prismjs' || specifier.startsWith('prismjs/')) {
-        return match;
       }
       // Rewrite other bare imports to esm.sh CDN
       return `from "https://esm.sh/${specifier}"`;
@@ -171,10 +228,6 @@ function rewriteBareImports(code) {
       if (specifier.startsWith('/')) {
         return match;
       }
-      // Skip prismjs - handled above
-      if (specifier === 'prismjs' || specifier.startsWith('prismjs/')) {
-        return match;
-      }
       // Rewrite other bare imports to esm.sh CDN
       return `import "https://esm.sh/${specifier}";`;
     }
@@ -185,6 +238,11 @@ function rewriteBareImports(code) {
 
 // LRU cache eviction
 function addToCache(cache, key, value, size) {
+  const existing = cache.get(key);
+  if (existing) {
+    currentCacheSize = Math.max(0, currentCacheSize - (existing.size || 0));
+    cache.delete(key);
+  }
   while (currentCacheSize + size > MAX_CACHE_SIZE && cache.size > 0) {
     const firstKey = cache.keys().next().value;
     const removed = cache.get(firstKey);
@@ -193,6 +251,37 @@ function addToCache(cache, key, value, size) {
   }
   cache.set(key, { ...value, size });
   currentCacheSize += size;
+}
+
+async function transformTypeScript(filePath, source) {
+  const stat = fs.statSync(filePath);
+  const cached = typescriptCache.get(filePath);
+  if (cached && cached.mtime === stat.mtimeMs) return cached.code;
+
+  let tsCode = source;
+  tsCode = tsCode.replace(/from\s+['"]virtual:routes['"]/g, "from '/virtual:routes'");
+  tsCode = tsCode.replace(
+    /const\s+modules\s*=\s*import\.meta\.glob\([^)]+\);?/g,
+    `const modules = new Proxy({}, {
+      get(_, key) {
+        const path = String(key).replace(/^\\.\\.\\//, '/');
+        return () => import(path);
+      }
+    });`
+  );
+
+  const result = await esbuildTransform(tsCode, {
+    loader: 'ts',
+    format: 'esm',
+    target: 'esnext',
+    sourcemap: 'inline',
+    sourcefile: path.relative(__dirname, filePath).replace(/\\/g, '/')
+  });
+  addToCache(typescriptCache, filePath, {
+    code: result.code,
+    mtime: stat.mtimeMs
+  }, Buffer.byteLength(result.code));
+  return result.code;
 }
 
 // Transform SFC files
@@ -249,6 +338,7 @@ async function transformSfcFile(filePath, code) {
 
 // Generate virtual:routes module
 function getRoutes() {
+  if (routesCache) return routesCache;
   const componentsDir = path.resolve(__dirname, 'components');
   const routes = [];
 
@@ -327,7 +417,8 @@ function getRoutes() {
   }
 
   scan(componentsDir);
-  return routes;
+  routesCache = routes;
+  return routesCache;
 }
 
 function generateVirtualRoutesModule() {
@@ -335,103 +426,7 @@ function generateVirtualRoutesModule() {
   return `export const routes = ${JSON.stringify(routes, null, 2)};`;
 }
 
-// Parse JSON body from request
-function parseRequestBody(req) {
-  return new Promise((resolve, reject) => {
-    let body = '';
-    req.on('data', chunk => body += chunk);
-    req.on('end', () => {
-      try {
-        resolve(body ? JSON.parse(body) : {});
-      } catch (e) {
-        reject(e);
-      }
-    });
-    req.on('error', reject);
-  });
-}
-
 // Handle Shop API requests
-async function handleShopApi(urlPath, body) {
-  try {
-    // Products API
-    if (urlPath === '/shop/api/products') {
-      const { action } = body;
-      
-      switch (action) {
-        case 'list':
-          return { status: 200, data: { products: shopDb.getAllProducts(), categories: shopDb.getCategories() } };
-        case 'get':
-          return { status: 200, data: { product: shopDb.getProductById(body.id) } };
-        case 'search':
-          return { status: 200, data: { products: shopDb.searchProducts(body.term || '') } };
-        case 'category':
-          return { status: 200, data: { products: shopDb.getProductsByCategory(body.category) } };
-        default:
-          return { status: 400, data: { error: 'Invalid action' } };
-      }
-    }
-    
-    // Cart API
-    if (urlPath === '/shop/api/cart') {
-      const { action, sessionId } = body;
-      
-      if (!sessionId) {
-        return { status: 400, data: { error: 'Session ID required' } };
-      }
-      
-      switch (action) {
-        case 'get':
-          return { status: 200, data: shopDb.getCart(sessionId) };
-        case 'add':
-          if (!body.productId) return { status: 400, data: { error: 'Product ID required' } };
-          return { status: 200, data: shopDb.addToCart(sessionId, body.productId, body.quantity || 1) };
-        case 'update':
-          if (!body.productId) return { status: 400, data: { error: 'Product ID required' } };
-          return { status: 200, data: shopDb.updateCartQuantity(sessionId, body.productId, body.quantity) };
-        case 'remove':
-          if (!body.productId) return { status: 400, data: { error: 'Product ID required' } };
-          return { status: 200, data: shopDb.removeFromCart(sessionId, body.productId) };
-        case 'clear':
-          return { status: 200, data: shopDb.clearCart(sessionId) };
-        default:
-          return { status: 400, data: { error: 'Invalid action' } };
-      }
-    }
-    
-    // Orders API
-    if (urlPath === '/shop/api/orders') {
-      const { action, sessionId } = body;
-      
-      switch (action) {
-        case 'create':
-          if (!sessionId || !body.customerInfo) {
-            return { status: 400, data: { error: 'Session ID and customer info required' } };
-          }
-          const { name, email, address } = body.customerInfo;
-          if (!name || !email || !address) {
-            return { status: 400, data: { error: 'Name, email, and address are required' } };
-          }
-          return { status: 200, data: { order: shopDb.createOrder(sessionId, body.customerInfo) } };
-        case 'get':
-          if (!body.orderId) return { status: 400, data: { error: 'Order ID required' } };
-          return { status: 200, data: { order: shopDb.getOrderById(body.orderId) } };
-        case 'list':
-          if (!sessionId) return { status: 400, data: { error: 'Session ID required' } };
-          return { status: 200, data: { orders: shopDb.getOrdersBySession(sessionId) } };
-        default:
-          return { status: 400, data: { error: 'Invalid action' } };
-      }
-    }
-    
-    return { status: 404, data: { error: 'Not found' } };
-    
-  } catch (err) {
-    console.error('[shop-api] Error:', err);
-    return { status: 500, data: { error: err.message } };
-  }
-}
-
 // Main request handler
 async function handleRequest(req, res) {
   const startTime = process.hrtime.bigint();
@@ -440,26 +435,16 @@ async function handleRequest(req, res) {
     const reqUrl = new URL(req.url, `http://localhost:${PORT}`);
     let urlPath = reqUrl.pathname;
     const query = reqUrl.search;
-    
-    // Handle virtual prism bundle - serves prismjs with all common language components
-    if (urlPath === '/virtual:prism-bundle') {
-      const prismBundle = `
-// Virtual Prism bundle with common languages
-import Prism from 'https://esm.sh/prismjs@1.29.0';
 
-// Load common languages synchronously via esm.sh's bundle feature
-const langs = ['javascript', 'typescript', 'css', 'scss', 'markup', 'json', 'bash'];
-await Promise.all(langs.map(lang => 
-  import(\`https://esm.sh/prismjs@1.29.0/components/prism-\${lang}.min.js\`)
-    .catch(() => {})
-));
-
-export default Prism;
-export const { languages, highlight, highlightAll, highlightElement } = Prism;
-`;
-      const content = Buffer.from(prismBundle, 'utf8');
-      res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8' });
-      res.end(content);
+    if (!PROD_MODE && urlPath === '/__sfc_events') {
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache, no-transform',
+        'Connection': 'keep-alive'
+      });
+      res.write(': connected\n\n');
+      liveReloadClients.add(res);
+      req.on('close', () => liveReloadClients.delete(res));
       return;
     }
     
@@ -564,45 +549,58 @@ export const { languages, highlight, highlightAll, highlightElement } = Prism;
       }
       
       const code = fs.readFileSync(filePath, 'utf8');
-      const scriptMatch = code.match(/<script[^>]*>([\s\S]*?)<\/script>/i);
-      let script = scriptMatch ? scriptMatch[1].trim() : 'export default {};';
+      const stat = fs.statSync(filePath);
+      const cached = scriptCache.get(filePath);
+      let transformedCode;
+
+      if (cached && cached.mtime === stat.mtimeMs) {
+        transformedCode = cached.code;
+      } else {
+        const scriptMatch = code.match(/<script[^>]*>([\s\S]*?)<\/script>/i);
+        let script = scriptMatch ? scriptMatch[1].trim() : 'export default {};';
       
-      // Rewrite bare imports before transforming
-      script = rewriteBareImports(script);
+        // Rewrite bare imports before transforming
+        script = rewriteBareImports(script);
       
-      // Extract decorator metadata and strip decorators for esbuild
-      const decoratorInfo = [];
-      script = script.replace(
-        /@([A-Za-z_$][\w$]*)\s*(?:\(\s*(['"`])([^\2]*?)\2\s*\))?\s*\n\s*([A-Za-z_$][\w$]*)\s*\(/g,
-        (match, decoratorName, quote, arg, methodName) => {
-          decoratorInfo.push({ decorator: decoratorName, arg: arg || '', method: methodName });
-          return `${methodName}(`;
-        }
-      );
+        // Extract decorator metadata and strip decorators for esbuild
+        const decoratorInfo = [];
+        script = script.replace(
+          /@([A-Za-z_$][\w$]*)\s*(?:\(\s*(['"`])([^\2]*?)\2\s*\))?\s*\n\s*([A-Za-z_$][\w$]*)\s*\(/g,
+          (match, decoratorName, quote, arg, methodName) => {
+            decoratorInfo.push({ decorator: decoratorName, arg: arg || '', method: methodName });
+            return `${methodName}(`;
+          }
+        );
       
-      // Transform TypeScript to JavaScript
-      const esbuild = await import('esbuild');
-      const result = await esbuild.transform(script, {
-        loader: 'ts',
-        format: 'esm',
-        target: 'esnext',
-        sourcemap: 'inline'
-      });
+        // Transform TypeScript to JavaScript
+        const result = await esbuildTransform(script, {
+          loader: 'ts',
+          format: 'esm',
+          target: 'esnext',
+          sourcemap: 'inline',
+          sourcefile: path.relative(__dirname, filePath).replace(/\\/g, '/') + '?sfc-script'
+        });
       
-      // Also rewrite any remaining bare imports in the output
-      let transformedCode = rewriteBareImports(result.code);
+        // Also rewrite any remaining bare imports in the output
+        transformedCode = rewriteBareImports(result.code);
       
-      // Append decorator metadata assignments
-      if (decoratorInfo.length > 0) {
-        // Find the default export name
-        const exportMatch = transformedCode.match(/var\s+(\w+)\s*=\s*class\s+extends/);
-        const className = exportMatch ? exportMatch[1] : 'stdin_default';
+        // Append decorator metadata assignments
+        if (decoratorInfo.length > 0) {
+          // Find the default export name
+          const exportMatch = transformedCode.match(/var\s+(\w+)\s*=\s*class\s+extends/);
+          const className = exportMatch ? exportMatch[1] : 'stdin_default';
         
-        transformedCode += '\n// SFC decorator metadata\n';
-        for (const info of decoratorInfo) {
-          const argStr = info.arg ? `'${info.arg}'` : '';
-          transformedCode += `try { ${className}.prototype.${info.method}.__sfc_decorators = [{type:'${info.decorator}', args:[${argStr}]}]; } catch(e) {}\n`;
+          transformedCode += '\n// SFC decorator metadata\n';
+          for (const info of decoratorInfo) {
+            const argStr = info.arg ? JSON.stringify(info.arg) : '';
+            transformedCode += `try { ${className}.prototype.${info.method}.__sfc_decorators = [{type:${JSON.stringify(info.decorator)}, args:[${argStr}]}]; } catch(e) {}\n`;
+          }
         }
+
+        addToCache(scriptCache, filePath, {
+          code: transformedCode,
+          mtime: stat.mtimeMs
+        }, Buffer.byteLength(transformedCode));
       }
       
       const content = Buffer.from(transformedCode, 'utf8');
@@ -629,24 +627,8 @@ export const { languages, highlight, highlightAll, highlightElement } = Prism;
       return;
     }
     
-    // Handle Shop API requests directly
-    if (urlPath.startsWith('/shop/api/') && req.method === 'POST') {
-      const body = await parseRequestBody(req);
-      const result = await handleShopApi(urlPath, body);
-      
-      res.writeHead(result.status, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify(result.data));
-      return;
-    }
-    
-    // Handle CORS preflight for shop API
-    if (urlPath.startsWith('/shop/api/') && req.method === 'OPTIONS') {
-      res.writeHead(204, {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type'
-      });
-      res.end();
+    if (urlPath.startsWith('/shop/api/')) {
+      await shopApiHandler(req, res);
       return;
     }
     
@@ -764,35 +746,15 @@ export const { languages, highlight, highlightAll, highlightElement } = Prism;
       content = Buffer.from(transformed, 'utf8');
     }
     
-    // Transform TypeScript files
-    if (ext === '.ts' && !PROD_MODE) {
-      // Use esbuild for fast TS transform
-      const esbuild = await import('esbuild');
-      let tsCode = content.toString('utf8');
-      
-      // Rewrite virtual module imports to URL paths
-      tsCode = tsCode.replace(/from\s+['"]virtual:routes['"]/g, "from '/virtual:routes'");
-      
-      // Rewrite import.meta.glob to a dynamic import proxy
-      // The glob pattern '../components/**/*.sfc' should become an object with dynamic imports
-      tsCode = tsCode.replace(
-        /const\s+modules\s*=\s*import\.meta\.glob\([^)]+\);?/g,
-        `const modules = new Proxy({}, {
-          get(_, key) {
-            // Convert '../components/X.sfc' to '/components/X.sfc'
-            const path = String(key).replace(/^\\.\\.\\//, '/');
-            return () => import(path);
-          }
-        });`
-      );
-      
-      const result = await esbuild.transform(tsCode, {
-        loader: 'ts',
-        format: 'esm',
-        target: 'esnext',
-        sourcemap: 'inline'
-      });
-      content = Buffer.from(result.code, 'utf8');
+    // Browsers cannot execute TypeScript syntax. Production mode disables
+    // live reload, not compilation, so source modules must always pass through
+    // esbuild before they are served.
+    if (ext === '.ts') {
+      content = Buffer.from(await transformTypeScript(filePath, content.toString('utf8')), 'utf8');
+    }
+
+    if (ext === '.html' && !PROD_MODE) {
+      content = Buffer.from(injectLiveReload(content.toString('utf8')), 'utf8');
     }
     
     // Generate ETag
@@ -846,6 +808,10 @@ const server = http.createServer({
 // Initialize modules and start server
 initModules().then(() => {
   server.listen(PORT, () => {
+    if (!PROD_MODE) {
+      startFileWatcher();
+      console.log(`[sfc] Live reload watching src/, components/, and index.html`);
+    }
     console.log(`
 ╔══════════════════════════════════════════════════════════╗
 ║  SFC High-Performance Server                             ║
@@ -870,6 +836,9 @@ initModules().then(() => {
 // Graceful shutdown
 process.on('SIGINT', () => {
   console.log('\nShutting down...');
+  clearTimeout(reloadTimer);
+  for (const watcher of fileWatchers) watcher.close();
+  for (const client of liveReloadClients) client.end();
   server.close(() => {
     process.exit(0);
   });

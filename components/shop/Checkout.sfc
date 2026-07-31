@@ -16,6 +16,7 @@ export default class extends HTMLElement {
   static tag = "shop-checkout";
   
   cart = { items: [], total: 0, item_count: 0 };
+  session = null;
   
   connectedCallback() {
     // Defer to next microtask to ensure template is attached
@@ -37,13 +38,14 @@ export default class extends HTMLElement {
   
   async loadCart() {
     try {
-      const sessionId = this.getSessionId();
-      const res = await fetch('/shop/api/cart', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'get', sessionId })
+      this.session = await window.shopAuth.getSession(true);
+      if (!this.session.authenticated) {
+        window.location.href = '/shop/account?returnTo=/shop/checkout';
+        return;
+      }
+      this.cart = await window.shopAuth.api('/shop/api/cart', {
+        body: { action: 'get' }
       });
-      this.cart = await res.json();
       this.render();
     } catch (err) {
       console.error('[shop-checkout] Failed to load cart:', err);
@@ -79,7 +81,7 @@ export default class extends HTMLElement {
               </div>
               <div class="form-group">
                 <label for="email">Email Address *</label>
-                <input type="email" id="email" name="email" required placeholder="john@example.com" />
+                <input type="email" id="email" name="email" required placeholder="john@example.com" value="${this.escapeAttribute(this.session?.user?.email || '')}" />
               </div>
             </div>
             
@@ -164,18 +166,12 @@ export default class extends HTMLElement {
     submitBtn.textContent = 'Processing...';
     
     try {
-      const sessionId = this.getSessionId();
-      const res = await fetch('/shop/api/orders', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const data = await window.shopAuth.api('/shop/api/orders', {
+        body: {
           action: 'create',
-          sessionId,
           customerInfo: { name, email, address }
-        })
+        }
       });
-      
-      const data = await res.json();
       
       if (data.error) {
         alert(data.error);
@@ -183,7 +179,9 @@ export default class extends HTMLElement {
         submitBtn.textContent = 'Place Order';
       } else {
         // Order success - redirect to confirmation
-        window.dispatchEvent(new CustomEvent('cart-updated'));
+        window.dispatchEvent(new CustomEvent('cart-updated', {
+          detail: { item_count: 0 }
+        }));
         window.location.href = `/shop/order/${data.order.id}`;
       }
     } catch (err) {
@@ -194,13 +192,12 @@ export default class extends HTMLElement {
     }
   }
   
-  getSessionId() {
-    let sessionId = localStorage.getItem('shop_session');
-    if (!sessionId) {
-      sessionId = 'sess_' + Math.random().toString(36).substr(2, 9) + Date.now();
-      localStorage.setItem('shop_session', sessionId);
-    }
-    return sessionId;
+  escapeAttribute(value) {
+    return String(value)
+      .replaceAll('&', '&amp;')
+      .replaceAll('"', '&quot;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;');
   }
 }
 </script>

@@ -20,10 +20,22 @@ export interface SfcPluginOptions {
   persistCache?: boolean;
   /** Pre-compiled routes cache */
   routesCache?: boolean;
+  /**
+   * Expand a dynamic route into concrete, database-backed build entries.
+   * Each entry becomes an HTML file and a colocated route-data.json blob.
+   */
+  resolvePrerenderRoutes?: (route: Record<string, any>) =>
+    | Array<{ params: Record<string, string | number>; data?: unknown }>
+    | Promise<Array<{ params: Record<string, string | number>; data?: unknown }>>;
 }
 
 export default function sfcPlugin(options: SfcPluginOptions = {}): Plugin {
-  const { productionMode = false, eagerCompile = false, persistCache = true } = options;
+  const {
+    productionMode = false,
+    eagerCompile = false,
+    persistCache = true,
+    resolvePrerenderRoutes
+  } = options;
   const transformCache: TransformCache | null = persistCache ? getTransformCache() : null;
   const virtualModuleId = 'virtual:routes';
   const resolvedVirtualId = '\0' + virtualModuleId;
@@ -744,75 +756,162 @@ export default function sfcPlugin(options: SfcPluginOptions = {}): Plugin {
     // the primary JS chunk produced by the build. We emit assets so they land
     // in the `dist/` output.
     async generateBundle(_options, bundle) {
-        try {
-          const routes = getRoutes();
-          // emit a routes manifest for debugging and to inspect what was discovered
-          try {
-            this.emitFile({ type: 'asset', fileName: 'routes-manifest.json', source: JSON.stringify(routes, null, 2) });
-          } catch (e) {}
+      const routes = getRoutes();
+      const generatedRoutes: Array<Record<string, unknown>> = [];
+      const emittedPaths = new Set<string>();
 
-          // find a primary entry chunk (first entry chunk) to reference from HTML files
-          let mainFile = null as null | string;
-          for (const [fileName, item] of Object.entries(bundle)) {
-            const it: any = item as any;
-            if (it.type === 'chunk' && it.isEntry) { mainFile = fileName; break; }
-          }
-          // fallback to any JS asset
-          if (!mainFile) {
-            for (const [fileName, item] of Object.entries(bundle)) {
-              const it: any = item as any;
-              if ((it.type === 'chunk' && fileName.endsWith('.js')) || (it.type === 'asset' && fileName.endsWith('.js'))) { mainFile = fileName; break; }
-            }
-          }
-          if (!mainFile) mainFile = 'assets/app.js';
+      this.emitFile({
+        type: 'asset',
+        fileName: 'routes-manifest.json',
+        source: JSON.stringify(routes, null, 2)
+      });
 
-          for (const r of routes) {
-            try {
-              if (r.isRedirect === 'true' || r.isRedirect === true) {
-                // emit a small redirect HTML file at the route path
-                const destParts = (String(r.path || '/')).split('/').filter(Boolean).map(p => p.startsWith(':') ? `[${p.slice(1)}]` : p);
-                const filePath = destParts.length ? path.posix.join(...destParts, 'index.html') : 'index.html';
-                // Skip root index.html — Vite already emits it
-                if (filePath === 'index.html') continue;
-                const redirectTo = r.redirect || '/';
-                const html = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=${redirectTo}"></head><body></body></html>`;
-                this.emitFile({ type: 'asset', fileName: filePath, source: html });
-                continue;
-              }
-
-              if (r.handlerOnly) {
-                // handler-only routes don't have a component to render; skip HTML generation
-                continue;
-              }
-
-              const destParts = (String(r.path || '/')).split('/').filter(Boolean).map(p => p.startsWith(':') ? `[${p.slice(1)}]` : p);
-              const filePath = destParts.length ? path.posix.join(...destParts, 'index.html') : 'index.html';
-
-              // Skip root index.html — Vite already emits it from the source HTML entry
-              if (filePath === 'index.html') continue;
-
-              const tag = r.tag || (r.component ? (() => {
-                // try to infer tag from component filename: components/FooBar.sfc -> foo-bar
-                try {
-                  const comp = String(r.component || '');
-                  const name = path.basename(comp).replace(/\.sfc$/i, '');
-                  // convert CamelCase/ Pascal to dashed-case
-                  const dashed = name.replace(/([a-z0-9])([A-Z])/g, '$1-$2').replace(/([A-Z])([A-Z][a-z])/g, '$1-$2').toLowerCase();
-                  return dashed;
-                } catch (e) { return 'div'; }
-              })() : 'div');
-
-              const tagOpen = `<${tag}></${tag}>`;
-              const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${r.path}</title></head><body><div id="app">${tagOpen}</div><script type="module" src="/${mainFile}"></script></body></html>`;
-              this.emitFile({ type: 'asset', fileName: filePath, source: html });
-            } catch (e) {
-              // continue on per-route errors
-            }
-          }
-        } catch (e) {
-          // don't break the build on generation errors
+      let mainFile: string | null = null;
+      for (const [fileName, item] of Object.entries(bundle)) {
+        const it: any = item;
+        if (it.type === 'chunk' && it.isEntry) {
+          mainFile = fileName;
+          break;
         }
       }
+      if (!mainFile) {
+        for (const [fileName, item] of Object.entries(bundle)) {
+          const it: any = item;
+          if ((it.type === 'chunk' || it.type === 'asset') && fileName.endsWith('.js')) {
+            mainFile = fileName;
+            break;
+          }
+        }
+      }
+      mainFile ||= 'assets/app.js';
+
+      const escapeHtml = (value: unknown) => String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+
+      const outputDirectory = (routePath: string) => {
+        const parts = routePath.split('/').filter(Boolean);
+        return parts.length ? path.posix.join(...parts) : '';
+      };
+
+      const emitPage = (
+        route: Record<string, any>,
+        concretePath: string,
+        params: Record<string, string | number>,
+        data: unknown
+      ) => {
+        const directory = outputDirectory(concretePath);
+        const htmlFile = directory ? path.posix.join(directory, 'index.html') : 'index.html';
+        const blobFile = directory ? path.posix.join(directory, 'route-data.json') : 'route-data.json';
+
+        if (emittedPaths.has(concretePath)) {
+          throw new Error(`[sfc:prerender] Duplicate concrete route "${concretePath}"`);
+        }
+        emittedPaths.add(concretePath);
+
+        const tag = route.tag || 'div';
+        const blob = {
+          route: concretePath,
+          pattern: route.path,
+          params,
+          data: data ?? null
+        };
+
+        if (htmlFile !== 'index.html') {
+          const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(concretePath)}</title></head><body><div id="app"><${tag}></${tag}></div><script type="module" src="/${mainFile}"></script></body></html>`;
+          this.emitFile({ type: 'asset', fileName: htmlFile, source: html });
+        }
+        this.emitFile({
+          type: 'asset',
+          fileName: blobFile,
+          source: JSON.stringify(blob, null, 2)
+        });
+        generatedRoutes.push({
+          path: concretePath,
+          pattern: route.path,
+          params,
+          html: htmlFile,
+          blob: blobFile
+        });
+      };
+
+      for (const route of routes as Array<Record<string, any>>) {
+        if (route.handlerOnly) continue;
+
+        if (route.isRedirect === 'true' || route.isRedirect === true) {
+          const directory = outputDirectory(String(route.path || '/'));
+          const htmlFile = directory ? path.posix.join(directory, 'index.html') : 'index.html';
+          if (htmlFile !== 'index.html') {
+            const target = escapeHtml(route.redirect || '/');
+            const html = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=${target}"></head><body></body></html>`;
+            this.emitFile({ type: 'asset', fileName: htmlFile, source: html });
+          }
+          continue;
+        }
+
+        const paramNames = Array.isArray(route.paramNames) ? route.paramNames : [];
+        if (paramNames.length === 0) {
+          emitPage(route, String(route.path || '/'), {}, null);
+          continue;
+        }
+
+        if (route.prerender === 'skip') {
+          generatedRoutes.push({ pattern: route.path, skipped: true });
+          continue;
+        }
+        if (!route.prerender) {
+          throw new Error(
+            `[sfc:prerender] Dynamic route "${route.path}" must declare a database source with prerender="..." or explicitly use prerender="skip"`
+          );
+        }
+        if (!resolvePrerenderRoutes) {
+          throw new Error(
+            `[sfc:prerender] Dynamic route "${route.path}" requires a resolvePrerenderRoutes build hook`
+          );
+        }
+
+        const entries = await resolvePrerenderRoutes(route);
+        if (!Array.isArray(entries)) {
+          throw new Error(`[sfc:prerender] Resolver for "${route.path}" did not return an array`);
+        }
+
+        for (const entry of entries) {
+          const params = entry?.params || {};
+          const missing = paramNames.filter(name => params[name] === undefined || params[name] === null);
+          if (missing.length) {
+            throw new Error(
+              `[sfc:prerender] Database entry for "${route.path}" is missing: ${missing.join(', ')}`
+            );
+          }
+
+          let concretePath = String(route.path);
+          for (const name of paramNames) {
+            const encoded = encodeURIComponent(String(params[name]));
+            if (!encoded || encoded === '.' || encoded === '..') {
+              throw new Error(
+                `[sfc:prerender] Unsafe value for "${name}" in route "${route.path}"`
+              );
+            }
+            concretePath = concretePath.replace(`:${name}`, encoded);
+          }
+          if (concretePath.includes(':')) {
+            throw new Error(`[sfc:prerender] Unresolved parameter in "${concretePath}"`);
+          }
+          emitPage(route, concretePath, params, entry.data);
+        }
+      }
+
+      this.emitFile({
+        type: 'asset',
+        fileName: 'static-routes-manifest.json',
+        source: JSON.stringify(generatedRoutes, null, 2)
+      });
+
+      const concreteCount = generatedRoutes.filter(route => !route.skipped).length;
+      console.log(`[sfc:prerender] Generated ${concreteCount} route blobs from ${routes.length} declarations`);
+    }
     };
   }
 

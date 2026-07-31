@@ -1,0 +1,188 @@
+<template>
+  <budget-shell page="overview">
+    <main class="page">
+      <header class="page-header">
+        <div><p>THURSDAY, 30 JULY</p><h1>Good morning, <em id="first-name">Alex.</em></h1><span>Here’s how your money is moving this month.</span></div>
+        <div class="header-actions"><button class="icon-btn" id="privacy-button" title="Toggle privacy">◉</button><a class="add-button" href="/dashboard/transactions?new=1"><span>+</span> Add transaction</a></div>
+      </header>
+      <section class="metrics" aria-label="Financial summary">
+        <article><div class="metric-top"><span>NET WORTH</span><i class="up">↗ 8.2%</i></div><strong data-private id="net-worth">€0</strong><small>Across 3 accounts</small><svg viewBox="0 0 150 35"><path d="M0 30 C18 24 25 28 42 19 S68 25 82 15 S112 18 150 2"/></svg></article>
+        <article><div class="metric-top"><span>MONTHLY INCOME</span><i class="up">↗ 3.4%</i></div><strong data-private id="income">€0</strong><small>2 income streams</small><svg viewBox="0 0 150 35"><path d="M0 27 C20 20 35 25 50 17 S78 19 91 11 S120 16 150 5"/></svg></article>
+        <article><div class="metric-top"><span>MONTHLY SPENDING</span><i class="down" id="spend-trend">↘ 4.1%</i></div><strong data-private id="spending">€0</strong><small id="spending-caption">0% of income</small><svg class="orange" viewBox="0 0 150 35"><path d="M0 8 C18 13 28 8 45 17 S72 11 88 23 S121 18 150 30"/></svg></article>
+        <article class="accent-card"><div class="metric-top"><span>MONTHLY SAVINGS</span><i>ON TRACK</i></div><strong data-private id="savings">€0</strong><small id="savings-caption">Goal €2,500</small><div class="goal-bar"><i id="savings-bar"></i></div></article>
+      </section>
+      <section class="dashboard-grid">
+        <article class="card cashflow">
+          <div class="card-head"><div><p>CASH FLOW</p><h2>Income vs. spending</h2></div><select id="period-select"><option>Last 6 months</option><option>This year</option></select></div>
+          <div class="chart-legend"><span><i class="income-dot"></i>Income</span><span><i class="expense-dot"></i>Spending</span></div>
+          <div class="bar-chart" id="cashflow-chart" aria-label="Six month income and spending bar chart"></div>
+        </article>
+        <article class="card spending-card">
+          <div class="card-head"><div><p>SPENDING</p><h2>By category</h2></div><a href="/dashboard/budgets">View details</a></div>
+          <div class="donut-row">
+            <div class="donut" id="spending-donut"><span><small>Total</small><b data-private id="donut-total">€0</b></span></div>
+            <div class="category-legend" id="category-legend"></div>
+          </div>
+        </article>
+        <article class="card transactions-card">
+          <div class="card-head"><div><p>RECENT ACTIVITY</p><h2>Latest transactions</h2></div><a href="/dashboard/transactions">View all →</a></div>
+          <div class="transaction-list" id="recent-transactions"></div>
+        </article>
+        <article class="card goals-card">
+          <div class="card-head"><div><p>SAVINGS GOALS</p><h2>Dreams in progress</h2></div><a href="/dashboard/goals">Manage →</a></div>
+          <div id="goal-preview"></div>
+        </article>
+      </section>
+    </main>
+  </budget-shell>
+</template>
+
+<script lang="ts">
+import './Shell.sfc';
+import { budgetAuth, budgetStore, money, escapeHtml, dateLabel } from './store';
+
+export default class extends HTMLElement {
+  static tag = 'budget-overview';
+    static shadow = true;
+  privacy = false;
+  dataHandler = () => this.render();
+  connectedCallback() {
+    if (!budgetAuth.require()) return;
+    Promise.resolve().then(() => {
+      this.shadowRoot.querySelector('#privacy-button')?.addEventListener('click', this.togglePrivacy);
+      window.addEventListener('budget-data-changed', this.dataHandler);
+      this.render();
+    });
+  }
+  disconnectedCallback() {
+    this.shadowRoot.querySelector('#privacy-button')?.removeEventListener('click', this.togglePrivacy);
+    window.removeEventListener('budget-data-changed', this.dataHandler);
+  }
+  togglePrivacy = () => {
+    this.privacy = !this.privacy;
+    this.shadowRoot.querySelectorAll('[data-private]').forEach(el => el.classList.toggle('blurred', this.privacy));
+  };
+  render() {
+    const state = budgetStore.get();
+    const session = budgetAuth.session();
+    const month = new Date().toISOString().slice(0, 7);
+    const current = state.transactions.filter(item => item.date.startsWith(month));
+    const income = current.filter(item => item.type === 'income').reduce((sum, item) => sum + item.amount, 0);
+    const spending = current.filter(item => item.type === 'expense').reduce((sum, item) => sum + item.amount, 0);
+    const savings = income - spending;
+    this.text('#first-name', `${String(session?.name || 'there').split(' ')[0]}.`);
+    this.text('#net-worth', money(24760 + savings, state.currency));
+    this.text('#income', money(income, state.currency));
+    this.text('#spending', money(spending, state.currency));
+    this.text('#savings', money(savings, state.currency));
+    this.text('#spending-caption', `${income ? Math.round(spending / income * 100) : 0}% of income`);
+    const bar = this.shadowRoot.querySelector('#savings-bar') as HTMLElement;
+    if (bar) bar.style.width = `${Math.min(100, Math.max(0, savings / 2500 * 100))}%`;
+    this.renderCashflow(state.transactions, state.currency);
+    this.renderCategories(current, state.budgets, state.currency);
+    this.renderTransactions(state.transactions, state.currency);
+    this.renderGoals(state.goals, state.currency);
+  }
+  renderCashflow(transactions, currency) {
+    const months = Array.from({ length: 6 }, (_, index) => {
+      const d = new Date(); d.setMonth(d.getMonth() - (5 - index));
+      const key = d.toISOString().slice(0, 7);
+      const items = transactions.filter(item => item.date.startsWith(key));
+      return { label: d.toLocaleString('en', { month: 'short' }), income: items.filter(i => i.type === 'income').reduce((s, i) => s + i.amount, 0), expense: items.filter(i => i.type === 'expense').reduce((s, i) => s + i.amount, 0) };
+    });
+    const max = Math.max(5000, ...months.flatMap(m => [m.income, m.expense]));
+    this.shadowRoot.querySelector('#cashflow-chart').innerHTML = months.map(m => `<div class="bar-group" title="${escapeHtml(m.label)}: ${escapeHtml(money(m.income, currency))} income"><div class="bars"><i class="income-bar" style="height:${Math.max(5, m.income / max * 100)}%"></i><i class="expense-bar" style="height:${Math.max(5, m.expense / max * 100)}%"></i></div><span>${escapeHtml(m.label)}</span></div>`).join('');
+  }
+  renderCategories(items, budgets, currency) {
+    const sums = new Map();
+    items.filter(i => i.type === 'expense').forEach(i => sums.set(i.category, (sums.get(i.category) || 0) + i.amount));
+    const categories = [...sums.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5);
+    const total = categories.reduce((s, [, v]) => s + v, 0);
+    const colors = ['#234f3d', '#87b883', '#c7f36b', '#f0ad72', '#d7ded9'];
+    let cursor = 0;
+    const stops = categories.map(([, value], index) => { const start = cursor; cursor += total ? value / total * 100 : 0; return `${colors[index]} ${start}% ${cursor}%`; });
+    const donut = this.shadowRoot.querySelector('#spending-donut') as HTMLElement;
+    if (donut) donut.style.background = `conic-gradient(${stops.join(', ') || '#edf0ee 0 100%'})`;
+    this.text('#donut-total', money(total, currency));
+    this.shadowRoot.querySelector('#category-legend').innerHTML = categories.map(([name, value], index) => `<div><i style="background:${colors[index]}"></i><span>${escapeHtml(name)}<small>${total ? Math.round(value / total * 100) : 0}%</small></span><b data-private>${escapeHtml(money(value, currency))}</b></div>`).join('');
+  }
+  renderTransactions(items, currency) {
+    const icons = { Housing: '⌂', Groceries: '♧', Transport: '↗', Dining: '♨', Income: '↓', Utilities: '⌁', Entertainment: '☆' };
+    this.shadowRoot.querySelector('#recent-transactions').innerHTML = [...items].sort((a,b) => b.date.localeCompare(a.date)).slice(0, 5).map(item => `<div><span class="transaction-icon">${icons[item.category] || '•'}</span><span><b>${escapeHtml(item.merchant)}</b><small>${escapeHtml(item.category)} · ${escapeHtml(dateLabel(item.date))}</small></span><strong data-private class="${item.type}">${item.type === 'expense' ? '−' : '+'}${escapeHtml(money(item.amount, currency))}</strong></div>`).join('');
+  }
+  renderGoals(goals, currency) {
+    this.shadowRoot.querySelector('#goal-preview').innerHTML = goals.slice(0, 3).map(goal => { const pct = Math.min(100, goal.saved / goal.target * 100); return `<div class="goal-row"><span>${escapeHtml(goal.emoji)}</span><div><b>${escapeHtml(goal.name)}</b><small>${escapeHtml(money(goal.saved, currency))} of ${escapeHtml(money(goal.target, currency))}</small><i><u style="width:${pct}%"></u></i></div><strong>${Math.round(pct)}%</strong></div>`; }).join('');
+  }
+  text(selector, value) { const el = this.shadowRoot.querySelector(selector); if (el) el.textContent = value; }
+}
+</script>
+
+<style>
+:host { display: block; }
+* { box-sizing: border-box; }
+.page { max-width: 1500px; margin: 0 auto; padding: 38px 46px 60px; color: #17231e; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+.page-header { margin-bottom: 31px; display: flex; justify-content: space-between; align-items: center; }
+.page-header p, .card-head p { margin: 0 0 5px; color: #839087; font-size: 9px; font-weight: 800; letter-spacing: 1.5px; }
+h1 { margin: 0 0 5px; font-family: Georgia, serif; font-size: 35px; font-weight: 400; letter-spacing: -1px; }
+h1 em { color: #2f6a51; font-weight: 400; }
+.page-header > div > span { color: #829087; font-size: 12px; }
+.header-actions { display: flex; gap: 10px; }
+.icon-btn { width: 39px; border: 1px solid #dfe5e1; border-radius: 9px; color: #5e6e65; background: #fff; cursor: pointer; }
+.add-button { padding: 11px 16px; border-radius: 9px; color: #fff; background: #174e39; text-decoration: none; font-size: 11px; font-weight: 750; }
+.add-button span { margin-right: 8px; font-size: 16px; }
+.metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 13px; }
+.metrics article, .card { position: relative; overflow: hidden; border: 1px solid #e2e7e3; border-radius: 13px; background: #fff; box-shadow: 0 2px 5px rgba(25,60,45,.025); }
+.metrics article { min-height: 145px; padding: 18px; }
+.metric-top { display: flex; justify-content: space-between; align-items: center; }
+.metric-top span { color: #849087; font-size: 8px; font-weight: 800; letter-spacing: 1.2px; }
+.metric-top i { padding: 3px 6px; border-radius: 5px; font-size: 8px; font-style: normal; }
+.metric-top .up { color: #31795a; background: #e6f5eb; }.metric-top .down { color: #a25d3d; background: #fff0e7; }
+.metrics strong { display: block; margin-top: 14px; font-family: Georgia, serif; font-size: 27px; font-weight: 500; }
+.metrics small { color: #8a958f; font-size: 9px; }
+.metrics svg { position: absolute; right: 13px; bottom: 13px; width: 46%; }
+.metrics svg path { fill: none; stroke: #4c8d70; stroke-width: 2; }.metrics svg.orange path { stroke: #d99164; }
+.metrics .accent-card { color: #fff; border-color: #184c39; background: linear-gradient(145deg, #184c39, #246149); }
+.accent-card .metric-top span, .accent-card small { color: #b8d1c4; }
+.accent-card .metric-top i { color: #d3f592; background: rgba(199,243,107,.12); }
+.goal-bar { height: 5px; margin-top: 10px; border-radius: 8px; background: rgba(255,255,255,.17); }
+.goal-bar i { display: block; height: 100%; border-radius: inherit; background: #c7f36b; }
+.dashboard-grid { margin-top: 14px; display: grid; grid-template-columns: 1.5fr 1fr; gap: 14px; }
+.card { padding: 20px; }
+.card-head { display: flex; justify-content: space-between; align-items: start; }
+.card-head h2 { margin: 0; font-family: Georgia, serif; font-size: 18px; font-weight: 500; }
+.card-head a { color: #39725a; text-decoration: none; font-size: 10px; font-weight: 700; }
+.card-head select { padding: 7px 10px; border: 1px solid #e1e6e3; border-radius: 7px; color: #6b766f; background: #fff; font-size: 9px; }
+.chart-legend { display: flex; justify-content: end; gap: 15px; color: #7f8a84; font-size: 9px; }
+.chart-legend i { display: inline-block; width: 7px; height: 7px; margin-right: 5px; border-radius: 2px; }.income-dot { background: #24513e; }.expense-dot { background: #c7f36b; }
+.bar-chart { height: 178px; padding: 16px 8px 0; display: flex; justify-content: space-around; align-items: stretch; border-bottom: 1px solid #e7ebe8; background: repeating-linear-gradient(to bottom, transparent 0, transparent 39px, #edf0ee 40px); }
+.bar-group { width: 12%; display: flex; flex-direction: column; align-items: center; justify-content: end; gap: 7px; }
+.bars { height: 140px; display: flex; align-items: end; gap: 4px; }
+.bars i { width: 11px; display: block; border-radius: 3px 3px 0 0; }.income-bar { background: #24513e; }.expense-bar { background: #c7f36b; }
+.bar-group > span { color: #8b958f; font-size: 9px; }
+.donut-row { min-height: 205px; display: flex; align-items: center; gap: 24px; }
+.donut { width: 132px; aspect-ratio: 1; display: grid; place-items: center; flex: 0 0 auto; border-radius: 50%; }
+.donut::before { content: ''; width: 78px; aspect-ratio: 1; grid-area: 1/1; border-radius: 50%; background: #fff; }
+.donut > span { z-index: 1; grid-area: 1/1; text-align: center; }.donut small { display: block; color: #8b968f; font-size: 8px; }.donut b { font-family: Georgia, serif; font-size: 15px; }
+.category-legend { flex: 1; }
+.category-legend > div { padding: 6px 0; display: grid; grid-template-columns: auto 1fr auto; gap: 7px; align-items: center; }
+.category-legend i { width: 7px; height: 7px; border-radius: 2px; }.category-legend span { font-size: 9px; }.category-legend small { margin-left: 5px; color: #9aa39e; }.category-legend b { font-size: 9px; }
+.transactions-card, .goals-card { min-height: 280px; }
+.transaction-list > div { padding: 11px 0; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; border-bottom: 1px solid #edf0ee; }
+.transaction-icon { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 9px; color: #365e4d; background: #edf5ee; }
+.transaction-list b, .goal-row b { display: block; font-size: 10px; }.transaction-list small, .goal-row small { display: block; margin-top: 3px; color: #8b958f; font-size: 8px; }
+.transaction-list strong { font-size: 10px; }.transaction-list strong.expense { color: #4f5b55; }.transaction-list strong.income { color: #29855d; }
+.goal-row { padding: 15px 0; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 11px; border-bottom: 1px solid #edf0ee; }
+.goal-row > span { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 50%; background: #f0f5ed; }
+.goal-row i { height: 4px; margin-top: 7px; display: block; overflow: hidden; border-radius: 6px; background: #e7ece8; }.goal-row u { height: 100%; display: block; border-radius: inherit; background: #5c9b6d; }
+.goal-row strong { color: #4e705f; font-size: 10px; }
+.blurred { filter: blur(7px); user-select: none; }
+@media (max-width: 1100px) { .metrics { grid-template-columns: repeat(2,1fr); } }
+@media (max-width: 720px) {
+  .page { padding: 25px 18px 45px; }
+  .page-header { align-items: end; }.page-header > div > span { display: none; }
+  h1 { font-size: 28px; }.icon-btn { display: none; }.add-button { font-size: 0; }.add-button span { margin: 0; font-size: 18px; }
+  .metrics, .dashboard-grid { grid-template-columns: 1fr; }
+}
+</style>
+
+<route path="/dashboard" methods="GET" />

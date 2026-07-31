@@ -108,6 +108,9 @@
 
     .btn-secondary {
         background: #667eea;
+        padding:10px 15px;
+        border-radius:8px;
+        text-decoration:none;
         color: white;
     }
 

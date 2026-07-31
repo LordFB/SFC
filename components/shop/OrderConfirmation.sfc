@@ -66,12 +66,14 @@ export default class extends HTMLElement {
   
   async loadOrder(id) {
     try {
-      const res = await fetch('/shop/api/orders', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'get', orderId: parseInt(id) })
+      const session = await window.shopAuth.getSession(true);
+      if (!session.authenticated) {
+        window.location.href = `/shop/account?returnTo=${encodeURIComponent(window.location.pathname)}`;
+        return;
+      }
+      const data = await window.shopAuth.api('/shop/api/orders', {
+        body: { action: 'get', orderId: parseInt(id) }
       });
-      const data = await res.json();
       
       if (data.order) {
         this.renderOrder(data.order);
@@ -83,7 +85,7 @@ export default class extends HTMLElement {
       this.showError();
     }
   }
-  
+
   renderOrder(order) {
     this.querySelector('#loading').style.display = 'none';
     this.querySelector('#order-success').style.display = 'block';
@@ -347,4 +349,4 @@ export default class extends HTMLElement {
 }
 </style>
 
-<route path="/shop/order/:id" methods="GET" />
+<route path="/shop/order/:id" methods="GET" prerender="skip" />

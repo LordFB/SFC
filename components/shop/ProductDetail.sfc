@@ -105,12 +105,16 @@ export default class extends HTMLElement {
   
   async loadProduct(id) {
     try {
-      const res = await fetch('/shop/api/products', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'get', id: parseInt(id) })
+      const blob = await this.loadRouteBlob();
+      if (String(blob?.params?.id) === String(id) && blob?.data?.product) {
+        this.product = blob.data.product;
+        this.renderProduct();
+        return;
+      }
+
+      const data = await window.shopAuth.api('/shop/api/products', {
+        body: { action: 'get', id: parseInt(id) }
       });
-      const data = await res.json();
       
       if (data.product) {
         this.product = data.product;
@@ -121,6 +125,16 @@ export default class extends HTMLElement {
     } catch (err) {
       console.error('[shop-product] Failed to load product:', err);
       this.showError();
+    }
+  }
+
+  async loadRouteBlob() {
+    try {
+      const base = window.location.pathname.replace(/\/?$/, '/');
+      const res = await fetch(`${base}route-data.json`);
+      return res.ok ? await res.json() : null;
+    } catch {
+      return null;
     }
   }
   
@@ -179,19 +193,13 @@ export default class extends HTMLElement {
     btn.textContent = 'Adding...';
     
     try {
-      const sessionId = this.getSessionId();
-      const res = await fetch('/shop/api/cart', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
+      const data = await window.shopAuth.api('/shop/api/cart', {
+        body: {
           action: 'add', 
-          sessionId, 
           productId: this.product.id, 
           quantity: this.quantity 
-        })
+        }
       });
-      
-      const data = await res.json();
       
       if (data.error) {
         alert(data.error);
@@ -199,7 +207,7 @@ export default class extends HTMLElement {
         btn.disabled = false;
       } else {
         btn.textContent = '✓ Added to Cart!';
-        window.dispatchEvent(new CustomEvent('cart-updated'));
+        window.dispatchEvent(new CustomEvent('cart-updated', { detail: data }));
         setTimeout(() => {
           btn.textContent = 'Add to Cart';
           btn.disabled = false;
@@ -213,14 +221,6 @@ export default class extends HTMLElement {
     }
   }
   
-  getSessionId() {
-    let sessionId = localStorage.getItem('shop_session');
-    if (!sessionId) {
-      sessionId = 'sess_' + Math.random().toString(36).substr(2, 9) + Date.now();
-      localStorage.setItem('shop_session', sessionId);
-    }
-    return sessionId;
-  }
 }
 </script>
 
@@ -473,4 +473,4 @@ export default class extends HTMLElement {
 }
 </style>
 
-<route path="/shop/product/:id" methods="GET" />
+<route path="/shop/product/:id" methods="GET" prerender="products" />

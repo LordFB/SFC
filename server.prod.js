@@ -17,11 +17,12 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import zlib from 'zlib';
 import { createHash } from 'crypto';
-import { shopDb } from './shop-db.js';
+import { createShopApi } from './shop-api.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const STATIC_DIR = path.join(__dirname, 'dist', 'public');
+const shopApiHandler = createShopApi({ production: true, port: PORT });
 
 // ─── MIME types ──────────────────────────────────────────────────────
 const MIME = {
@@ -57,69 +58,7 @@ function compress(buf, acceptEncoding) {
   return { content: buf, encoding: null };
 }
 
-function parseBody(req) {
-  return new Promise((resolve, reject) => {
-    const chunks = [];
-    req.on('data', c => chunks.push(c));
-    req.on('end', () => {
-      const raw = Buffer.concat(chunks).toString();
-      try { resolve(raw ? JSON.parse(raw) : {}); }
-      catch { reject(new Error('Invalid JSON')); }
-    });
-    req.on('error', reject);
-  });
-}
-
 // ─── shop API handler (identical logic to shop-api-server.js) ────────
-async function handleShopApi(urlPath, body) {
-  try {
-    if (urlPath === '/shop/api/products') {
-      switch (body.action) {
-        case 'list':     return { s: 200, d: { products: shopDb.getAllProducts(), categories: shopDb.getCategories() } };
-        case 'get':      return { s: 200, d: { product: shopDb.getProductById(body.id) } };
-        case 'search':   return { s: 200, d: { products: shopDb.searchProducts(body.term || '') } };
-        case 'category': return { s: 200, d: { products: shopDb.getProductsByCategory(body.category) } };
-        default:         return { s: 400, d: { error: 'Invalid action' } };
-      }
-    }
-    if (urlPath === '/shop/api/cart') {
-      const { action, sessionId } = body;
-      if (!sessionId) return { s: 400, d: { error: 'Session ID required' } };
-      switch (action) {
-        case 'get':    return { s: 200, d: shopDb.getCart(sessionId) };
-        case 'add':    if (!body.productId) return { s: 400, d: { error: 'Product ID required' } };
-                       return { s: 200, d: shopDb.addToCart(sessionId, body.productId, body.quantity || 1) };
-        case 'update': if (!body.productId) return { s: 400, d: { error: 'Product ID required' } };
-                       return { s: 200, d: shopDb.updateCartQuantity(sessionId, body.productId, body.quantity) };
-        case 'remove': if (!body.productId) return { s: 400, d: { error: 'Product ID required' } };
-                       return { s: 200, d: shopDb.removeFromCart(sessionId, body.productId) };
-        case 'clear':  return { s: 200, d: shopDb.clearCart(sessionId) };
-        default:       return { s: 400, d: { error: 'Invalid action' } };
-      }
-    }
-    if (urlPath === '/shop/api/orders') {
-      const { action, sessionId } = body;
-      switch (action) {
-        case 'create': {
-          if (!sessionId || !body.customerInfo) return { s: 400, d: { error: 'Session ID and customer info required' } };
-          const { name, email, address } = body.customerInfo;
-          if (!name || !email || !address) return { s: 400, d: { error: 'Name, email, and address are required' } };
-          return { s: 200, d: { order: shopDb.createOrder(sessionId, body.customerInfo) } };
-        }
-        case 'get':  if (!body.orderId) return { s: 400, d: { error: 'Order ID required' } };
-                     return { s: 200, d: { order: shopDb.getOrderById(body.orderId) } };
-        case 'list': if (!sessionId) return { s: 400, d: { error: 'Session ID required' } };
-                     return { s: 200, d: { orders: shopDb.getOrdersBySession(sessionId) } };
-        default:     return { s: 400, d: { error: 'Invalid action' } };
-      }
-    }
-    return { s: 404, d: { error: 'Not found' } };
-  } catch (err) {
-    console.error('[shop-api]', err);
-    return { s: 500, d: { error: err.message } };
-  }
-}
-
 // ─── Static file cache (in memory) ──────────────────────────────────
 const fileCache = new Map();
 
@@ -165,28 +104,8 @@ async function handle(req, res) {
   const url = new URL(req.url, `http://localhost:${PORT}`);
   const urlPath = url.pathname;
 
-  // CORS preflight
-  if (req.method === 'OPTIONS' && urlPath.startsWith('/shop/api/')) {
-    res.writeHead(204, {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type'
-    });
-    res.end();
-    return;
-  }
-
-  // Shop API
-  if (urlPath.startsWith('/shop/api/') && req.method === 'POST') {
-    try {
-      const body = await parseBody(req);
-      const { s, d } = await handleShopApi(urlPath, body);
-      res.writeHead(s, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify(d));
-    } catch (err) {
-      res.writeHead(400, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Bad request' }));
-    }
+  if (urlPath.startsWith('/shop/api/')) {
+    await shopApiHandler(req, res);
     return;
   }
 
@@ -195,6 +114,13 @@ async function handle(req, res) {
   const filePath = path.join(STATIC_DIR, safePath === '/' ? 'index.html' : safePath);
 
   if (serveStatic(filePath, req, res)) return;
+
+  // Prerendered routes live at /route/index.html. Resolve clean URLs to their
+  // generated page before using the generic SPA fallback.
+  if (req.method === 'GET' && safePath !== '/') {
+    const routeIndex = path.join(STATIC_DIR, safePath, 'index.html');
+    if (serveStatic(routeIndex, req, res)) return;
+  }
 
   // SPA fallback — serve index.html for any unmatched GET
   if (req.method === 'GET') {

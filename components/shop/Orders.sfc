@@ -26,13 +26,14 @@
 
         async loadOrders() {
             try {
-                const sessionId = this.getSessionId();
-                const res = await fetch('/shop/api/orders', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ action: 'list', sessionId })
+                const session = await window.shopAuth.getSession(true);
+                if (!session.authenticated) {
+                    window.location.href = '/shop/account?returnTo=/shop/orders';
+                    return;
+                }
+                const data = await window.shopAuth.api('/shop/api/orders', {
+                    body: { action: 'list' }
                 });
-                const data = await res.json();
                 this.orders = data.orders || [];
                 this.render();
             } catch (err) {
@@ -95,14 +96,6 @@
             });
         }
 
-        getSessionId() {
-            let sessionId = localStorage.getItem('shop_session');
-            if (!sessionId) {
-                sessionId = 'sess_' + Math.random().toString(36).substr(2, 9) + Date.now();
-                localStorage.setItem('shop_session', sessionId);
-            }
-            return sessionId;
-        }
     }
 </script>
 

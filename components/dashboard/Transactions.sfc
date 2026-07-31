@@ -1,0 +1,139 @@
+<template>
+  <budget-shell page="transactions">
+    <main class="page">
+      <header class="page-header">
+        <div><p>YOUR MONEY, LINE BY LINE</p><h1>Transactions</h1><span>Search, filter, and keep every movement accounted for.</span></div>
+        <button class="primary" id="new-transaction"><span>+</span> Add transaction</button>
+      </header>
+      <section class="summary" id="transaction-summary"></section>
+      <section class="card">
+        <div class="toolbar">
+          <label class="search">⌕<input id="search" type="search" placeholder="Search merchant or category…"></label>
+          <select id="type-filter"><option value="">All types</option><option value="expense">Expenses</option><option value="income">Income</option></select>
+          <select id="category-filter"><option value="">All categories</option></select>
+          <button class="export" id="export-button">⇩ Export CSV</button>
+        </div>
+        <div class="table-wrap">
+          <table><thead><tr><th>DATE</th><th>MERCHANT</th><th>CATEGORY</th><th>TYPE</th><th>AMOUNT</th><th><span class="sr-only">Actions</span></th></tr></thead><tbody id="transaction-rows"></tbody></table>
+        </div>
+        <div class="empty" id="empty-state"><b>No transactions found</b><span>Try a different filter or add a transaction.</span></div>
+        <footer><span id="result-count">0 transactions</span><button id="clear-filters">Clear filters</button></footer>
+      </section>
+      <dialog id="transaction-dialog">
+        <form id="transaction-form">
+          <header><div><p id="dialog-eyebrow">NEW ENTRY</p><h2 id="dialog-title">Add transaction</h2></div><button type="button" class="close" id="close-dialog" aria-label="Close">×</button></header>
+          <input type="hidden" id="transaction-id">
+          <div class="type-switch"><label><input type="radio" name="type" value="expense" checked><span>Expense</span></label><label><input type="radio" name="type" value="income"><span>Income</span></label></div>
+          <label>Merchant or description<input id="merchant" required maxlength="60" placeholder="e.g. Local market"></label>
+          <div class="form-grid"><label>Amount<input id="amount" type="number" min=".01" step=".01" required placeholder="0.00"></label><label>Date<input id="date" type="date" required></label></div>
+          <label>Category<select id="category" required><option>Groceries</option><option>Housing</option><option>Dining</option><option>Transport</option><option>Utilities</option><option>Entertainment</option><option>Health</option><option>Income</option><option>Other</option></select></label>
+          <label>Note <small>optional</small><textarea id="note" rows="3" maxlength="140" placeholder="Add a little context…"></textarea></label>
+          <div class="dialog-actions"><button type="button" class="danger" id="delete-transaction">Delete</button><button type="button" class="secondary" id="cancel-dialog">Cancel</button><button type="submit" class="primary">Save transaction</button></div>
+        </form>
+      </dialog>
+    </main>
+  </budget-shell>
+</template>
+
+<script lang="ts">
+import './Shell.sfc';
+import { budgetAuth, budgetStore, money, dateLabel, escapeHtml, uid } from './store';
+export default class extends HTMLElement {
+  static tag = 'budget-transactions';
+    static shadow = true;
+  bound = false;
+  connectedCallback() {
+    if (!budgetAuth.require()) return;
+    Promise.resolve().then(() => { this.bind(); this.populateCategories(); this.render(); if (new URLSearchParams(location.search).has('new')) this.open(); });
+  }
+  bind() {
+    if (this.bound) return; this.bound = true;
+    this.shadowRoot.querySelector('#new-transaction')?.addEventListener('click', () => this.open());
+    this.shadowRoot.querySelector('#close-dialog')?.addEventListener('click', () => this.close());
+    this.shadowRoot.querySelector('#cancel-dialog')?.addEventListener('click', () => this.close());
+    this.shadowRoot.querySelector('#transaction-form')?.addEventListener('submit', event => this.save(event));
+    this.shadowRoot.querySelector('#delete-transaction')?.addEventListener('click', () => this.remove());
+    this.shadowRoot.querySelector('#transaction-rows')?.addEventListener('click', event => this.tableAction(event));
+    ['#search','#type-filter','#category-filter'].forEach(selector => this.shadowRoot.querySelector(selector)?.addEventListener('input', () => this.render()));
+    this.shadowRoot.querySelector('#clear-filters')?.addEventListener('click', () => this.clear());
+    this.shadowRoot.querySelector('#export-button')?.addEventListener('click', () => this.exportCsv());
+  }
+  populateCategories() {
+    const categories = [...new Set(budgetStore.get().transactions.map(item => item.category))].sort();
+    const select = this.shadowRoot.querySelector('#category-filter');
+    select.innerHTML = '<option value="">All categories</option>' + categories.map(value => `<option>${escapeHtml(value)}</option>`).join('');
+  }
+  filtered() {
+    const search = (this.shadowRoot.querySelector('#search') as HTMLInputElement).value.toLowerCase();
+    const type = (this.shadowRoot.querySelector('#type-filter') as HTMLSelectElement).value;
+    const category = (this.shadowRoot.querySelector('#category-filter') as HTMLSelectElement).value;
+    return budgetStore.get().transactions.filter(item => (!search || `${item.merchant} ${item.category} ${item.note || ''}`.toLowerCase().includes(search)) && (!type || item.type === type) && (!category || item.category === category)).sort((a,b) => b.date.localeCompare(a.date));
+  }
+  render() {
+    const state = budgetStore.get(), items = this.filtered();
+    const income = state.transactions.filter(i => i.type === 'income').reduce((s,i) => s+i.amount,0);
+    const expenses = state.transactions.filter(i => i.type === 'expense').reduce((s,i) => s+i.amount,0);
+    this.shadowRoot.querySelector('#transaction-summary').innerHTML = `<article><span>ALL-TIME INCOME</span><b class="positive">${escapeHtml(money(income,state.currency))}</b></article><article><span>ALL-TIME SPENDING</span><b>${escapeHtml(money(expenses,state.currency))}</b></article><article><span>NET CASH FLOW</span><b class="${income-expenses>=0?'positive':''}">${escapeHtml(money(income-expenses,state.currency))}</b></article>`;
+    this.shadowRoot.querySelector('#transaction-rows').innerHTML = items.map(item => `<tr><td>${escapeHtml(dateLabel(item.date))}</td><td><span class="merchant-icon">${item.type==='income'?'↓':'↑'}</span><b>${escapeHtml(item.merchant)}</b><small>${escapeHtml(item.note || '')}</small></td><td><span class="category">${escapeHtml(item.category)}</span></td><td><span class="type ${item.type}">${escapeHtml(item.type)}</span></td><td class="amount ${item.type}">${item.type==='expense'?'−':'+'}${escapeHtml(money(item.amount,state.currency))}</td><td><button class="more" data-action="edit" data-id="${item.id}" aria-label="Edit">•••</button></td></tr>`).join('');
+    this.shadowRoot.querySelector('#empty-state').classList.toggle('show', items.length === 0);
+    this.text('#result-count', `${items.length} transaction${items.length===1?'':'s'}`);
+  }
+  tableAction(event) { const button = (event.target as HTMLElement).closest('[data-action]') as HTMLElement; if (!button) return; const item = budgetStore.get().transactions.find(i=>i.id===button.dataset.id); if (item) this.open(item); }
+  open(item = null) {
+    const form = this.shadowRoot.querySelector('#transaction-form') as HTMLFormElement; form.reset();
+    (this.shadowRoot.querySelector('#date') as HTMLInputElement).value = new Date().toISOString().slice(0,10);
+    this.text('#dialog-title', item ? 'Edit transaction' : 'Add transaction'); this.text('#dialog-eyebrow', item ? 'UPDATE ENTRY' : 'NEW ENTRY');
+    if (item) {
+      (this.shadowRoot.querySelector('#transaction-id') as HTMLInputElement).value=item.id;
+      (this.shadowRoot.querySelector('#merchant') as HTMLInputElement).value=item.merchant;
+      (this.shadowRoot.querySelector('#amount') as HTMLInputElement).value=String(item.amount);
+      (this.shadowRoot.querySelector('#date') as HTMLInputElement).value=item.date;
+      (this.shadowRoot.querySelector('#category') as HTMLSelectElement).value=item.category;
+      (this.shadowRoot.querySelector('#note') as HTMLTextAreaElement).value=item.note||'';
+      (this.shadowRoot.querySelector(`[name="type"][value="${item.type}"]`) as HTMLInputElement).checked=true;
+    }
+    (this.shadowRoot.querySelector('#delete-transaction') as HTMLElement).style.display = item ? 'block' : 'none';
+    (this.shadowRoot.querySelector('#transaction-dialog') as HTMLDialogElement).showModal();
+  }
+  close() { (this.shadowRoot.querySelector('#transaction-dialog') as HTMLDialogElement).close(); }
+  save(event) {
+    event.preventDefault();
+    const id=(this.shadowRoot.querySelector('#transaction-id') as HTMLInputElement).value||uid();
+    const type=(this.shadowRoot.querySelector('[name="type"]:checked') as HTMLInputElement).value;
+    budgetStore.saveTransaction({ id, type, merchant:(this.shadowRoot.querySelector('#merchant') as HTMLInputElement).value.trim(), amount:Number((this.shadowRoot.querySelector('#amount') as HTMLInputElement).value), date:(this.shadowRoot.querySelector('#date') as HTMLInputElement).value, category:(this.shadowRoot.querySelector('#category') as HTMLSelectElement).value, note:(this.shadowRoot.querySelector('#note') as HTMLTextAreaElement).value.trim() });
+    this.close(); this.populateCategories(); this.render();
+  }
+  remove() {
+    const id = (this.shadowRoot.querySelector('#transaction-id') as HTMLInputElement).value;
+    if (id && confirm('Delete this transaction?')) {
+      budgetStore.deleteTransaction(id);
+      this.close(); this.populateCategories(); this.render();
+    }
+  }
+  clear() { ['#search','#type-filter','#category-filter'].forEach(s => (this.shadowRoot.querySelector(s) as HTMLInputElement).value=''); this.render(); }
+  exportCsv() {
+    const rows=[['Date','Merchant','Category','Type','Amount','Note'],...this.filtered().map(i=>[i.date,i.merchant,i.category,i.type,String(i.amount),i.note||''])];
+    const csv=rows.map(r=>r.map(v=>`"${String(v).replaceAll('"','""')}"`).join(',')).join('\n');
+    const link=document.createElement('a'); link.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'})); link.download='clarity-transactions.csv'; link.click(); URL.revokeObjectURL(link.href);
+  }
+  text(selector,value){const el=this.shadowRoot.querySelector(selector);if(el)el.textContent=value;}
+}
+</script>
+
+<style>
+:host { display:block; } *{box-sizing:border-box}
+.page{max-width:1500px;margin:auto;padding:38px 46px 70px;color:#17231e;font-family:Inter,ui-sans-serif,system-ui,sans-serif}
+.page-header{display:flex;justify-content:space-between;align-items:end;margin-bottom:25px}.page-header p, dialog header p{margin:0 0 5px;color:#809087;font-size:9px;font-weight:800;letter-spacing:1.5px}
+h1{margin:0 0 5px;font:400 36px Georgia,serif}.page-header span{color:#84918a;font-size:12px}
+button{font:inherit;cursor:pointer}.primary{padding:11px 16px;border:0;border-radius:9px;color:white;background:#174d39;font-size:11px;font-weight:750}.primary span{margin-right:8px;color:white;font-size:16px}
+.summary{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:14px}.summary article{padding:17px 20px;border:1px solid #e2e7e3;border-radius:12px;background:#fff}.summary span{display:block;color:#87928c;font-size:8px;font-weight:800;letter-spacing:1px}.summary b{display:block;margin-top:7px;font:500 20px Georgia,serif}.summary .positive{color:#277653}
+.card{border:1px solid #e1e6e3;border-radius:13px;background:#fff;overflow:hidden}.toolbar{padding:14px 16px;display:flex;gap:9px;border-bottom:1px solid #e8ece9}
+.toolbar select, .search{height:36px;border:1px solid #dfe5e1;border-radius:8px;background:white;color:#66746d;font-size:10px}.search{width:min(330px,100%);padding:0 11px;display:flex;align-items:center;gap:8px}.search input{width:100%;border:0;outline:0;font:inherit}.toolbar select{padding:0 11px}.export{margin-left:auto;padding:0 12px;border:1px solid #dfe5e1;border-radius:8px;color:#426352;background:white;font-size:10px;font-weight:700}
+.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse}th{padding:12px 16px;text-align:left;color:#919b95;background:#fafbfa;font-size:8px;letter-spacing:1px}td{padding:13px 16px;border-top:1px solid #edf0ee;color:#536159;font-size:10px;white-space:nowrap}td:nth-child(2){min-width:230px}td b{color:#273b32}.merchant-icon{width:31px;height:31px;margin-right:10px;display:inline-grid;place-items:center;border-radius:9px;color:#2f684f;background:#edf5ee;font-size:14px}.merchant-icon+ b{vertical-align:middle}td small{display:block;margin:2px 0 0 45px;color:#9ba49f}.category,.type{padding:4px 7px;border-radius:6px;background:#f1f4f2;font-size:8px}.type{text-transform:capitalize}.type.income{color:#277653;background:#e8f6ed}.amount{text-align:right;font-weight:750}.amount.income{color:#28805a}.more{border:0;color:#839087;background:transparent}.empty{padding:70px;display:none;text-align:center}.empty.show{display:grid;gap:7px}.empty span{color:#89958e;font-size:11px}.card footer{padding:12px 16px;display:flex;justify-content:space-between;border-top:1px solid #edf0ee;color:#89948e;font-size:9px}.card footer button{border:0;color:#2f6a51;background:transparent;font-size:9px}
+dialog{width:min(520px,calc(100vw - 30px));max-width:520px;padding:0;overflow-x:hidden;border:0;border-radius:16px;color:#1a3027;box-shadow:0 30px 80px rgba(20,50,38,.25)}dialog::backdrop{background:rgba(13,34,26,.48);backdrop-filter:blur(3px)}dialog form{display:block;width:100%;min-width:0;margin:0;padding:25px}dialog header{width:100%;display:flex;justify-content:space-between;align-items:start}dialog h2{margin:0 0 20px;font:500 25px Georgia,serif}.close{border:0;color:#78857e;background:transparent;font-size:25px}.type-switch{width:100%;margin-bottom:18px;padding:4px;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);border-radius:9px;background:#f1f4f2}.type-switch label{min-width:0}.type-switch input{position:absolute;opacity:0}.type-switch span{padding:9px;display:block;text-align:center;border-radius:7px;color:#6f7c75;font-size:10px;font-weight:700}.type-switch input:checked+span{color:#24523e;background:#fff;box-shadow:0 1px 5px #dce2de}
+form>label, .form-grid label{display:grid;gap:7px;margin:13px 0;color:#455c50;font-size:10px;font-weight:750}.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}dialog input,dialog select,dialog textarea{width:100%;padding:11px 12px;border:1px solid #dbe2dd;border-radius:8px;outline:0;background:#fff;font:inherit}dialog input:focus,dialog select:focus,dialog textarea:focus{border-color:#4f826b;box-shadow:0 0 0 3px #e5f0e9}dialog label small{color:#9aa39e;font-weight:400}.dialog-actions{margin-top:20px;display:flex;justify-content:end;gap:9px}.secondary,.danger{padding:10px 15px;border:1px solid #dce3df;border-radius:8px;color:#52645a;background:white;font-size:10px;font-weight:700}.danger{margin-right:auto;color:#b04437;border-color:#efcfc9}.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
+@media(max-width:760px){.page{padding:24px 16px}.summary{grid-template-columns:1fr}.toolbar{flex-wrap:wrap}.search{width:100%}.export{margin-left:0}.page-header>div>span{display:none}.page-header h1{font-size:29px}.page-header .primary{font-size:0}.page-header .primary span{margin:0;font-size:16px}}
+@media(max-width:560px){dialog form{padding:20px}.form-grid{grid-template-columns:1fr}.dialog-actions{flex-wrap:wrap}.dialog-actions .danger{margin-right:auto}}
+</style>
+
+<route path="/dashboard/transactions" methods="GET" />

@@ -1,0 +1,64 @@
+<template>
+  <budget-shell page="budgets">
+    <main class="page">
+      <header class="page-header"><div><p>SPEND WITH INTENTION</p><h1>Monthly budgets</h1><span>Give every category a boundary without losing flexibility.</span></div><button class="primary" id="new-budget">+ New budget</button></header>
+      <section class="hero">
+        <div><p>TOTAL MONTHLY PLAN</p><strong id="total-plan">€0</strong><span id="plan-caption">across 0 categories</span></div>
+        <div class="hero-progress"><div><span id="spent-label">€0 spent</span><b id="remaining-label">€0 remaining</b></div><i><u id="total-progress"></u></i><small id="pace-label">You’re on pace this month</small></div>
+      </section>
+      <section class="budget-grid" id="budget-grid"></section>
+      <button class="add-card" id="add-budget-card"><span>+</span><b>Create another budget</b><small>Set a limit for a new category</small></button>
+      <dialog id="budget-dialog">
+        <form id="budget-form">
+          <header><div><p>BUDGET RULE</p><h2 id="dialog-title">Create budget</h2></div><button type="button" id="close-dialog">×</button></header>
+          <input id="budget-id" type="hidden">
+          <label>Category<input id="category" required maxlength="30" placeholder="e.g. Wellness"></label>
+          <label>Monthly limit<input id="limit" type="number" min="1" step="1" required placeholder="400"></label>
+          <label>Accent color<input id="color" type="color" value="#3d8bfd"></label>
+          <div class="dialog-actions"><button class="danger" type="button" id="delete-budget">Delete</button><button class="secondary" type="button" id="cancel-dialog">Cancel</button><button class="primary" type="submit">Save budget</button></div>
+        </form>
+      </dialog>
+    </main>
+  </budget-shell>
+</template>
+
+<script lang="ts">
+import './Shell.sfc';
+import { budgetAuth, budgetStore, money, escapeHtml, uid } from './store';
+export default class extends HTMLElement {
+  static tag = 'budget-budgets';
+    static shadow = true;
+  connectedCallback(){if(!budgetAuth.require())return;Promise.resolve().then(()=>{this.bind();this.render()})}
+  bind(){
+    this.shadowRoot.querySelector('#new-budget')?.addEventListener('click',()=>this.open());
+    this.shadowRoot.querySelector('#add-budget-card')?.addEventListener('click',()=>this.open());
+    this.shadowRoot.querySelector('#budget-grid')?.addEventListener('click',e=>{const b=(e.target as HTMLElement).closest('[data-id]') as HTMLElement;if(b)this.open(budgetStore.get().budgets.find(x=>x.id===b.dataset.id))});
+    this.shadowRoot.querySelector('#close-dialog')?.addEventListener('click',()=>this.close());this.shadowRoot.querySelector('#cancel-dialog')?.addEventListener('click',()=>this.close());
+    this.shadowRoot.querySelector('#budget-form')?.addEventListener('submit',e=>this.save(e));this.shadowRoot.querySelector('#delete-budget')?.addEventListener('click',()=>this.remove());
+  }
+  render(){
+    const state=budgetStore.get(),month=new Date().toISOString().slice(0,7),expenses=state.transactions.filter(i=>i.type==='expense'&&i.date.startsWith(month));
+    const spentFor=c=>expenses.filter(i=>i.category===c).reduce((s,i)=>s+i.amount,0),total=state.budgets.reduce((s,b)=>s+b.limit,0),spent=state.budgets.reduce((s,b)=>s+spentFor(b.category),0);
+    this.text('#total-plan',money(total,state.currency));this.text('#plan-caption',`across ${state.budgets.length} categories`);this.text('#spent-label',`${money(spent,state.currency)} spent`);this.text('#remaining-label',`${money(Math.max(0,total-spent),state.currency)} remaining`);
+    (this.shadowRoot.querySelector('#total-progress') as HTMLElement).style.width=`${Math.min(100,spent/Math.max(1,total)*100)}%`;
+    const icons={Housing:'⌂',Groceries:'♧',Dining:'♨',Transport:'↗',Entertainment:'☆',Utilities:'⌁',Health:'♡'};
+    this.shadowRoot.querySelector('#budget-grid').innerHTML=state.budgets.map(b=>{const used=spentFor(b.category),pct=used/b.limit*100,over=used>b.limit;return `<button class="budget-card" data-id="${b.id}"><header><span class="budget-icon" style="color:${b.color};background:${b.color}16">${icons[b.category]||'◇'}</span><i>•••</i></header><h2>${escapeHtml(b.category)}</h2><div class="amount-row"><b>${escapeHtml(money(used,state.currency))}</b><span>of ${escapeHtml(money(b.limit,state.currency))}</span></div><div class="progress ${over?'over':''}"><i style="width:${Math.min(100,pct)}%;background:${b.color}"></i></div><footer><span>${Math.round(pct)}% used</span><b>${over?money(used-b.limit,state.currency)+' over':money(b.limit-used,state.currency)+' left'}</b></footer></button>`}).join('');
+  }
+  open(item=null){const form=this.shadowRoot.querySelector('#budget-form') as HTMLFormElement;form.reset();(this.shadowRoot.querySelector('#color') as HTMLInputElement).value=item?.color||'#3d8bfd';(this.shadowRoot.querySelector('#budget-id') as HTMLInputElement).value=item?.id||'';(this.shadowRoot.querySelector('#category') as HTMLInputElement).value=item?.category||'';(this.shadowRoot.querySelector('#limit') as HTMLInputElement).value=item?.limit||'';this.text('#dialog-title',item?'Edit budget':'Create budget');(this.shadowRoot.querySelector('#delete-budget') as HTMLElement).style.display=item?'block':'none';(this.shadowRoot.querySelector('#budget-dialog') as HTMLDialogElement).showModal()}
+  close(){(this.shadowRoot.querySelector('#budget-dialog') as HTMLDialogElement).close()}
+  save(e){e.preventDefault();budgetStore.saveBudget({id:(this.shadowRoot.querySelector('#budget-id') as HTMLInputElement).value||uid(),category:(this.shadowRoot.querySelector('#category') as HTMLInputElement).value.trim(),limit:Number((this.shadowRoot.querySelector('#limit') as HTMLInputElement).value),color:(this.shadowRoot.querySelector('#color') as HTMLInputElement).value});this.close();this.render()}
+  remove(){const id=(this.shadowRoot.querySelector('#budget-id') as HTMLInputElement).value;if(id&&confirm('Delete this budget?')){budgetStore.deleteBudget(id);this.close();this.render()}}
+  text(s,v){const e=this.shadowRoot.querySelector(s);if(e)e.textContent=v}
+}
+</script>
+
+<style>
+:host{display:block}*{box-sizing:border-box}.page{max-width:1500px;margin:auto;padding:38px 46px 70px;color:#17231e;font-family:Inter,ui-sans-serif,system-ui,sans-serif}
+.page-header{display:flex;justify-content:space-between;align-items:end;margin-bottom:24px}.page-header p,.hero p,dialog p{margin:0 0 5px;color:#839087;font-size:9px;font-weight:800;letter-spacing:1.5px}h1{margin:0 0 5px;font:400 36px Georgia,serif}.page-header span{color:#84918a;font-size:12px}button{font:inherit;cursor:pointer}.primary{padding:11px 16px;border:0;border-radius:9px;color:#fff;background:#174d39;font-size:11px;font-weight:750}
+.hero{padding:24px 28px;display:grid;grid-template-columns:1fr 1.4fr;align-items:center;border-radius:15px;color:#fff;background:linear-gradient(125deg,#153f30,#286248)}.hero p{color:#a9cabb}.hero strong{display:block;font:500 34px Georgia,serif}.hero>div>span{color:#aac4b7;font-size:9px}.hero-progress>div{display:flex;justify-content:space-between;font-size:10px}.hero-progress>i{height:8px;margin:11px 0 8px;display:block;overflow:hidden;border-radius:9px;background:rgba(255,255,255,.16)}.hero-progress u{height:100%;display:block;border-radius:inherit;background:#c7f36b}.hero-progress small{color:#b9d1c5;font-size:9px}
+.budget-grid{margin-top:16px;display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.budget-card{padding:20px;text-align:left;border:1px solid #e1e6e3;border-radius:13px;color:#17231e;background:#fff}.budget-card:hover{transform:translateY(-2px);box-shadow:0 10px 25px rgba(20,55,40,.07)}.budget-card header{display:flex;justify-content:space-between}.budget-icon{width:36px;height:36px;display:grid;place-items:center;border-radius:10px;font-size:17px}.budget-card header i{color:#9aa39e;font-style:normal}.budget-card h2{margin:15px 0 7px;font:500 18px Georgia,serif}.amount-row b{font-size:15px}.amount-row span{color:#8c9791;font-size:9px}.progress{height:6px;margin:14px 0 9px;overflow:hidden;border-radius:8px;background:#e9eeeb}.progress i{height:100%;display:block;border-radius:inherit}.progress.over{outline:2px solid #fee4d8}.budget-card footer{display:flex;justify-content:space-between;color:#8a958f;font-size:8px}.budget-card footer b{color:#5a6b62}.add-card{width:100%;margin-top:14px;padding:20px;display:grid;place-items:center;gap:4px;border:1px dashed #cbd6cf;border-radius:13px;color:#426150;background:transparent}.add-card span{width:29px;height:29px;display:grid;place-items:center;border-radius:50%;background:#e9f2eb;font-size:18px}.add-card b{font-size:10px}.add-card small{color:#929c97;font-size:8px}
+dialog{width:min(480px,calc(100vw - 30px));max-width:480px;padding:0;overflow-x:hidden;border:0;border-radius:16px;color:#193127;box-shadow:0 30px 80px rgba(20,50,38,.25)}dialog::backdrop{background:rgba(13,34,26,.48);backdrop-filter:blur(3px)}dialog form{display:block;width:100%;min-width:0;margin:0;padding:25px}dialog header{width:100%;display:flex;justify-content:space-between}dialog h2{margin:0 0 16px;font:500 25px Georgia,serif}dialog header button{border:0;color:#78857e;background:transparent;font-size:24px}dialog label{display:grid;gap:7px;margin:14px 0;color:#455c50;font-size:10px;font-weight:750}dialog input{width:100%;padding:11px;border:1px solid #dbe2dd;border-radius:8px;font:inherit}dialog input[type=color]{height:42px;padding:4px}.dialog-actions{margin-top:20px;display:flex;justify-content:end;gap:8px}.secondary,.danger{padding:10px 14px;border:1px solid #dce3df;border-radius:8px;background:white;font-size:10px;font-weight:700}.danger{margin-right:auto;color:#b04437;border-color:#efcfc9}
+@media(max-width:900px){.budget-grid{grid-template-columns:repeat(2,1fr)}}@media(max-width:650px){.page{padding:24px 16px}.budget-grid,.hero{grid-template-columns:1fr}.hero{gap:20px}.page-header>div>span{display:none}.page-header h1{font-size:29px}.page-header .primary{padding:11px;font-size:0}.page-header .primary::first-letter{font-size:16px}}
+</style>
+
+<route path="/dashboard/budgets" methods="GET" />

@@ -44,13 +44,9 @@ export default class extends HTMLElement {
   
   async loadCart() {
     try {
-      const sessionId = this.getSessionId();
-      const res = await fetch('/shop/api/cart', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'get', sessionId })
+      this.cart = await window.shopAuth.api('/shop/api/cart', {
+        body: { action: 'get' }
       });
-      this.cart = await res.json();
       this.render();
     } catch (err) {
       console.error('[shop-cart] Failed to load cart:', err);
@@ -119,34 +115,21 @@ export default class extends HTMLElement {
   
   async updateQuantity(productId, quantity) {
     try {
-      const sessionId = this.getSessionId();
-      const res = await fetch('/shop/api/cart', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
+      this.cart = await window.shopAuth.api('/shop/api/cart', {
+        body: {
           action: quantity === 0 ? 'remove' : 'update', 
-          sessionId, 
           productId, 
           quantity 
-        })
+        }
       });
-      this.cart = await res.json();
       this.render();
-      window.dispatchEvent(new CustomEvent('cart-updated'));
+      window.dispatchEvent(new CustomEvent('cart-updated', { detail: this.cart }));
     } catch (err) {
       console.error('[shop-cart] Failed to update cart:', err);
       alert('Failed to update cart');
     }
   }
   
-  getSessionId() {
-    let sessionId = localStorage.getItem('shop_session');
-    if (!sessionId) {
-      sessionId = 'sess_' + Math.random().toString(36).substr(2, 9) + Date.now();
-      localStorage.setItem('shop_session', sessionId);
-    }
-    return sessionId;
-  }
 }
 </script>
 
