@@ -136,6 +136,7 @@ async function handle(req, res) {
   if (urlPath === '/playground-preview.html' || urlPath === '/playground-preview.js') {
     res.setHeader('Content-Security-Policy', PLAYGROUND_CSP);
     res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+    if (urlPath === '/playground-preview.js') res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
   }
 
   if (urlPath === '/__sfc/capabilities' && (req.method === 'GET' || req.method === 'HEAD')) {

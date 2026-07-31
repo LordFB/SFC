@@ -801,10 +801,15 @@ async function handleRequest(req, res) {
     const headers = {
       'Content-Type': mimeType,
       'ETag': etag,
-      'Cache-Control': PROD_MODE ? 'public, max-age=31536000, immutable' : 'no-cache',
+      'Cache-Control': webPath === '/playground-preview.html' || webPath === '/playground-preview.js'
+        ? 'no-cache'
+        : PROD_MODE ? 'public, max-age=31536000, immutable' : 'no-cache',
       'Connection': 'keep-alive',
       'Keep-Alive': 'timeout=5, max=1000'
     };
+    if (webPath === '/playground-preview.js') {
+      headers['Cross-Origin-Resource-Policy'] = 'cross-origin';
+    }
     
     if (encoding) {
       headers['Content-Encoding'] = encoding;

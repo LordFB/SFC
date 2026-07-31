@@ -52,6 +52,8 @@ test('playground delegates SFC blocks to Monaco native language tokenizers', () 
   for (const language of ['html', 'javascript', 'typescript', 'css', 'scss']) {
     assert.match(playground, new RegExp(`nextEmbedded:'${language}'`), `playground should embed Monaco ${language} highlighting`);
   }
+  assert.match(playground, /switchTo:'@template'.*nextEmbedded:'html'/, 'embedded tokenization must leave the root state before entering HTML');
+  assert.match(playground, /switchTo:'@root'.*nextEmbedded:'@pop'/, 'closing SFC blocks should switch back without popping an empty state stack');
   assert.match(playground, /token:'@rematch'.*nextEmbedded:'@pop'/, 'closing SFC blocks should return to the outer tokenizer');
   assert.match(playground, /token:'tag\.sfc'/, 'SFC block boundaries should retain distinct highlighting');
 });
@@ -61,6 +63,7 @@ test('playground executes generated code only inside its dedicated CSP sandbox',
   const previewHtml = readFileSync(new URL('../public/playground-preview.html', import.meta.url), 'utf8');
   const previewScript = readFileSync(new URL('../public/playground-preview.js', import.meta.url), 'utf8');
   const productionServer = readFileSync(new URL('../server.prod.js', import.meta.url), 'utf8');
+  const developmentServer = readFileSync(new URL('../server.js', import.meta.url), 'utf8');
 
   assert.doesNotMatch(playground, /\.srcdoc\s*=/, 'the preview must not inherit the application CSP through srcdoc');
   assert.match(playground, /type:'sfc-preview-render'/, 'compiled previews should be sent to the sandbox document');
@@ -68,4 +71,6 @@ test('playground executes generated code only inside its dedicated CSP sandbox',
   assert.doesNotMatch(previewHtml, /<script(?!\s+src=)/, 'the sandbox document must not contain inline scripts');
   assert.match(previewScript, /new Blob\(\[script\]/, 'generated code should use a revocable blob URL inside the sandbox');
   assert.match(productionServer, /script-src 'self' blob:/, 'only the preview response should permit blob scripts');
+  assert.match(productionServer, /Cross-Origin-Resource-Policy', 'cross-origin'/, 'the opaque-origin sandbox must be allowed to load its bootstrap');
+  assert.match(developmentServer, /webPath === '\/playground-preview\.js'[\s\S]*Cross-Origin-Resource-Policy'[\s\S]*cross-origin/, 'the standalone server should expose the same sandbox bootstrap policy');
 });

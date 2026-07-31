@@ -97,21 +97,21 @@ export default class extends HTMLElement {
       defaultToken: '',
       tokenizer: {
         root: [
-          [/<[t]emplate\b[^>]*>/i, { token:'tag.sfc', next:'@template', nextEmbedded:'html' }],
-          [/<[s]cript\b(?=[^>]*\blang\s*=\s*["'](?:ts|typescript)["'])[^>]*>/i, { token:'tag.sfc', next:'@script', nextEmbedded:'typescript' }],
-          [/<[s]cript\b[^>]*>/i, { token:'tag.sfc', next:'@script', nextEmbedded:'javascript' }],
-          [/<[s]tyle\b(?=[^>]*\blang\s*=\s*["']scss["'])[^>]*>/i, { token:'tag.sfc', next:'@style', nextEmbedded:'scss' }],
-          [/<[s]tyle\b[^>]*>/i, { token:'tag.sfc', next:'@style', nextEmbedded:'css' }],
+          [/<[t]emplate\b[^>]*>/i, { token:'tag.sfc', switchTo:'@template', nextEmbedded:'html' }],
+          [/<[s]cript\b(?=[^>]*\blang\s*=\s*["'](?:ts|typescript)["'])[^>]*>/i, { token:'tag.sfc', switchTo:'@script', nextEmbedded:'typescript' }],
+          [/<[s]cript\b[^>]*>/i, { token:'tag.sfc', switchTo:'@script', nextEmbedded:'javascript' }],
+          [/<[s]tyle\b(?=[^>]*\blang\s*=\s*["']scss["'])[^>]*>/i, { token:'tag.sfc', switchTo:'@style', nextEmbedded:'scss' }],
+          [/<[s]tyle\b[^>]*>/i, { token:'tag.sfc', switchTo:'@style', nextEmbedded:'css' }],
           [/<[r]oute\b[^>]*\/>/i, 'tag.sfc'],
-          [/<[r]oute\b[^>]*>/i, { token:'tag.sfc', next:'@route', nextEmbedded:'html' }],
+          [/<[r]oute\b[^>]*>/i, { token:'tag.sfc', switchTo:'@route', nextEmbedded:'html' }],
           [/<\/(?:template|script|style|route)\s*>/i, 'tag.sfc'],
           [/\s+/, 'white'],
           [/./, 'invalid']
         ],
-        template: [[/<\/template/, { token:'@rematch', next:'@pop', nextEmbedded:'@pop' }]],
-        script: [[/<\/script/, { token:'@rematch', next:'@pop', nextEmbedded:'@pop' }]],
-        style: [[/<\/style/, { token:'@rematch', next:'@pop', nextEmbedded:'@pop' }]],
-        route: [[/<\/route/, { token:'@rematch', next:'@pop', nextEmbedded:'@pop' }]]
+        template: [[/<\/template/, { token:'@rematch', switchTo:'@root', nextEmbedded:'@pop' }]],
+        script: [[/<\/script/, { token:'@rematch', switchTo:'@root', nextEmbedded:'@pop' }]],
+        style: [[/<\/style/, { token:'@rematch', switchTo:'@root', nextEmbedded:'@pop' }]],
+        route: [[/<\/route/, { token:'@rematch', switchTo:'@root', nextEmbedded:'@pop' }]]
       }
     });
     monaco.languages.setLanguageConfiguration('sfc', { brackets:[['<','>'],['{','}'],['[',']'],['(',')']], autoClosingPairs:[{open:'<',close:'>'},{open:'{',close:'}'},{open:'[',close:']'},{open:'(',close:')'},{open:'"',close:'"'},{open:"'",close:"'"}] });
