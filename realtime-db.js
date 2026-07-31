@@ -99,10 +99,10 @@ export function createRealtimeDatabase(options = {}) {
   const decode = row => row ? ({
     key: row.key,
     value: row.deleted ? null : JSON.parse(row.value_json),
-    version: row.version,
-    updatedAt: row.updated_at,
+    version: Number(row.version),
+    updatedAt: Number(row.updated_at),
     deleted: Boolean(row.deleted),
-    ...(row.sequence == null ? {} : { sequence: row.sequence })
+    ...(row.sequence == null ? {} : { sequence: Number(row.sequence) })
   }) : null;
 
   const commit = async (key, value, expectedVersion, deleted) => {

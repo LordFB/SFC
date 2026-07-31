@@ -103,14 +103,24 @@ OpenSSH tunnels for services reachable through a bastion. `createDataLayer()`
 exposes only named operations; each operation must validate input and explicitly
 declare authorization or `public: true`.
 
+Database persistence uses the asynchronous contract in `database/contract.js`.
+Application modules issue portable `$1`-parameterized SQL and depend only on
+`query`, `get`, `execute`, `exec`, and `transaction`; drivers own connection and
+dialect details. `SFC_SQL_ADAPTER=sqlite` selects the local `better-sqlite3`
+adapter and `SFC_SQLITE_PATH` selects its file. When no explicit adapter is set,
+the presence of Netlify's runtime environment selects the `@netlify/database`
+Postgres adapter automatically. Netlify applies the baseline schema from
+`netlify/database/migrations/` to production and deploy-preview branches.
+
 Copy `.env.example` to `.env.local` for local credentials. The serve and build
 commands load `.env`, `.env.local`, `.env.<mode>`, and
 `.env.<mode>.local`; variables already present in the process take precedence.
 All real `.env` variants are ignored by Git.
 
-Runtime databases default to the ignored `.data/` directory. In production,
-set `SFC_DATA_DIR` or explicit database paths to a restricted, encrypted volume
-that is backed up independently of the application checkout.
+SQLite databases default to the ignored `.data/` directory. In production on a
+persistent server, set `SFC_DATA_DIR` or `SFC_SQLITE_PATH` to a restricted,
+encrypted volume. Netlify deployments use their managed Postgres database
+instead and do not write SQLite files into the function filesystem.
 
 ## Production security
 
@@ -145,8 +155,10 @@ src/runtime/            Custom-element runtime and reactive realtime client
 src/transformer.ts      SFC block extraction and compilation
 src/plugin.ts           Vite integration, route discovery, and prerender output
 data-adapters.js         Server-only adapters, secrets, auth, and SSH transport
+database/                Portable SQL contract plus SQLite and Netlify drivers
+netlify/database/        Netlify Postgres migrations applied during deploys
 env-loader.js            Layered local .env loading with process-env precedence
-realtime-db.js          SQLite values, versions, subscriptions, and SSE fan-out
+realtime-db.js           Adapter-backed values, versions, subscriptions, and SSE
 server.js               Development transform/API server
 server.prod.js          Production/preview static and API server
 test/                    Unit, integration, security, and load-oriented tests

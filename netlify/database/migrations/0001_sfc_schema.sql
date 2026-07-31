@@ -1,5 +1,5 @@
 CREATE TABLE IF NOT EXISTS products (
-  id BIGSERIAL PRIMARY KEY,
+  id SERIAL PRIMARY KEY,
   name TEXT NOT NULL,
   description TEXT,
   price DOUBLE PRECISION NOT NULL,
@@ -34,16 +34,16 @@ CREATE INDEX IF NOT EXISTS idx_sessions_token_hash ON sessions(token_hash);
 CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
 
 CREATE TABLE IF NOT EXISTS cart_items (
-  id BIGSERIAL PRIMARY KEY,
+  id SERIAL PRIMARY KEY,
   session_id TEXT NOT NULL,
-  product_id BIGINT NOT NULL REFERENCES products(id),
+  product_id INTEGER NOT NULL REFERENCES products(id),
   quantity INTEGER NOT NULL DEFAULT 1 CHECK(quantity > 0 AND quantity <= 1000),
   created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
   UNIQUE(session_id, product_id)
 );
 
 CREATE TABLE IF NOT EXISTS orders (
-  id BIGSERIAL PRIMARY KEY,
+  id SERIAL PRIMARY KEY,
   session_id TEXT,
   user_id TEXT REFERENCES users(id),
   customer_email TEXT NOT NULL,
@@ -57,9 +57,9 @@ CREATE TABLE IF NOT EXISTS orders (
 CREATE INDEX IF NOT EXISTS idx_orders_user_id ON orders(user_id);
 
 CREATE TABLE IF NOT EXISTS order_items (
-  id BIGSERIAL PRIMARY KEY,
-  order_id BIGINT NOT NULL REFERENCES orders(id),
-  product_id BIGINT NOT NULL REFERENCES products(id),
+  id SERIAL PRIMARY KEY,
+  order_id INTEGER NOT NULL REFERENCES orders(id),
+  product_id INTEGER NOT NULL REFERENCES products(id),
   quantity INTEGER NOT NULL,
   price DOUBLE PRECISION NOT NULL
 );
@@ -100,7 +100,7 @@ INSERT INTO products (name, description, price, image, category, stock) VALUES
   ('Webcam HD', '1080p HD webcam with auto-focus and built-in microphone', 89.99, 'https://picsum.photos/seed/webcam/400/400', 'Electronics', 60),
   ('Desk Lamp', 'LED desk lamp with adjustable brightness and color temperature', 39.99, 'https://picsum.photos/seed/lamp/400/400', 'Home Office', 120),
   ('Monitor Light Bar', 'Screen light bar to reduce eye strain', 59.99, 'https://picsum.photos/seed/lightbar/400/400', 'Home Office', 70),
-  ('Wireless Mouse', 'Eronomic wireless mouse with silent clicks', 34.99, 'https://picsum.photos/seed/mouse/400/400', 'Accessories', 150),
+  ('Wireless Mouse', 'Ergonomic wireless mouse with silent clicks', 34.99, 'https://picsum.photos/seed/mouse/400/400', 'Accessories', 150),
   ('Cable Management Kit', 'Complete cable management solution for clean desks', 24.99, 'https://picsum.photos/seed/cables/400/400', 'Accessories', 200),
   ('Portable SSD 1TB', 'Fast portable SSD with USB-C connection', 129.99, 'https://picsum.photos/seed/ssd/400/400', 'Electronics', 40),
   ('Desk Mat XL', 'Extra large desk mat for keyboard and mouse', 29.99, 'https://picsum.photos/seed/deskmat/400/400', 'Accessories', 90)

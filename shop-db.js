@@ -113,7 +113,7 @@ async function getCartWith(database, sessionId) {
       COALESCE(SUM(ci.quantity), 0) AS item_count
     FROM cart_items ci JOIN products p ON ci.product_id = p.id WHERE ci.session_id = $1
   `, [sessionId]);
-  return { items, ...totals };
+  return { items, total: Number(totals.total), item_count: Number(totals.item_count) };
 }
 
 async function getOrderWith(database, orderId, userId) {
@@ -136,7 +136,7 @@ export const shopDb = {
   async getCategories() { return (await (await state()).adapter.query('SELECT DISTINCT category FROM products')).map(row => row.category); },
   async searchProducts(term) {
     const pattern = `%${term}%`;
-    return (await state()).adapter.query('SELECT * FROM products WHERE name LIKE $1 OR description LIKE $2', [pattern, pattern]);
+    return (await state()).adapter.query('SELECT * FROM products WHERE LOWER(name) LIKE LOWER($1) OR LOWER(description) LIKE LOWER($2)', [pattern, pattern]);
   },
 
   async getCart(sessionId) { return getCartWith((await state()).adapter, sessionId); },

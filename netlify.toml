@@ -1,0 +1,13 @@
+[build]
+command = "npm run build"
+publish = "dist/public"
+
+[build.environment]
+NODE_VERSION = "22"
+
+# Generated route directories are served directly. This fallback preserves
+# client-side routing for paths that do not have a prerendered HTML file.
+[[redirects]]
+from = "/*"
+to = "/index.html"
+status = 200
