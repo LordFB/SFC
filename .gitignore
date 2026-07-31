@@ -10,3 +10,6 @@ shop.db-shm
 realtime.db
 realtime.db-wal
 realtime.db-shm
+.env
+.env.*
+!.env.example

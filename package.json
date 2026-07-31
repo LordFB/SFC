@@ -3,12 +3,15 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=20.12.0"
+  },
   "scripts": {
-    "build": "vite build --config vite.config.build.ts",
+    "build": "node --import ./env-loader.js ./node_modules/vite/bin/vite.js build --config vite.config.build.ts",
     "test": "node --test test/*.test.js",
-    "serve": "node server.prod.js",
-    "serve:preview": "node server.prod.js --preview",
-    "serve:dev": "node server.js"
+    "serve": "node --import ./env-loader.js server.prod.js",
+    "serve:preview": "node --import ./env-loader.js server.prod.js --preview",
+    "serve:dev": "node --import ./env-loader.js server.js"
   },
   "dependencies": {
     "argon2": "^0.44.0",

@@ -28,6 +28,7 @@
       <section class="doc-section" id="reactivity"><div class="doc-section-head"><span>01.5</span><div><h2>Reactive values, all the way to SQLite</h2><p class="doc-lead">A realtime value is a class field, a pub/sub subscription, a persistent database record, and a live template binding at once.</p></div></div>
         <div class="doc-code"><div class="doc-code-head"><span>SharedCounter.sfc</span><b>REACTIVE + PERSISTENT</b></div><pre><code data-snippet="reactivity"></code></pre></div>
         <aside class="doc-note blue"><b>LIFECYCLE MANAGED</b><p>The runtime discovers realtime fields automatically. It multiplexes subscriptions when the element connects and releases them when the element leaves the document.</p></aside>
+        <aside class="doc-note"><b>CONNECTED SERVICES STAY SERVER-SIDE</b><p>SQLite owns the realtime log. HTTP APIs, private databases, and SSH-reachable services enter through authenticated data adapters in the next chapterâ€”never through credentials embedded in a component.</p></aside>
       </section>
       <a class="doc-next" href="/intermediate"><span>NEXT CHAPTER<strong>Backend introduction</strong></span><i>→</i></a>
   </article>
