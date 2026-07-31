@@ -9,6 +9,7 @@
   "scripts": {
     "brand:icons": "node scripts/generate-brand-icons.mjs",
     "build": "node --import ./env-loader.js ./node_modules/vite/bin/vite.js build --config vite.config.build.ts",
+    "cache:clear": "node scripts/clear-sfc-cache.mjs",
     "typecheck": "tsc --noEmit",
     "check": "npm run typecheck && npm test && npm run build && npm run verify:prerender",
     "test": "node --test test/*.test.js",

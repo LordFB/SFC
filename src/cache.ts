@@ -135,7 +135,10 @@ export class TransformCache {
   clear(): void {
     this.cache.clear();
     this.accessOrder = [];
-    this.dirty = true;
+    this.dirty = false;
+    if (this.persistPath) {
+      try { fs.rmSync(this.persistPath, { force: true }); } catch {}
+    }
   }
 
   dispose(): void {

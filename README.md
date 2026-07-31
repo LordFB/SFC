@@ -153,9 +153,20 @@ history cleanup required for older checkouts.
 npm test             # framework, adapters, realtime, and concurrency tests
 npm run build        # validate routes and emit dist/public
 npm run check        # typecheck, test, build, and enforce performance budgets
+npm run cache:clear  # remove persisted SFC compiler transforms
 npm run serve:dev    # transform components on demand
 npm run serve:preview
 npm run serve        # hardened production mode
+```
+
+Restart a running development server after `cache:clear` to discard its
+in-memory transforms. Browser image previews are stored separately in IndexedDB
+and can be cleared from application code:
+
+```ts
+import { clearSfcRuntimeCaches } from '/src/runtime/index'
+
+const { entries, bytes } = await clearSfcRuntimeCaches()
 ```
 
 ## Repository map

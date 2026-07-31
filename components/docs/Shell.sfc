@@ -1,7 +1,7 @@
 <template>
   <div class="shell">
     <aside id="sidebar">
-      <a class="logo" href="/basics" aria-label="SFC Framework home"><img src="/brand/sfc-mark.svg" alt="" width="38" height="38"><b>SFC</b><small>FRAMEWORK</small></a>
+      <a class="logo" href="/basics" aria-label="SFC Framework home"><img src="/brand/sfc-mark.svg" alt="" width="50" height="50"><b>SFC</b><small>FRAMEWORK</small></a>
       <nav aria-label="Documentation sections">
         <p>LEARN</p>
         <a data-section="basics" href="/basics"><i>01</i><span>Framework basics<small>Frontend foundations</small></span></a>

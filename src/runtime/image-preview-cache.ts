@@ -21,6 +21,11 @@ export interface ImagePreviewCacheOptions {
   maxSize?: number;
 }
 
+export interface ImagePreviewCacheClearResult {
+  entries: number;
+  bytes: number;
+}
+
 interface ManagedImage {
   originalSrc: string;
   token: number;
@@ -34,6 +39,7 @@ const rootObservers = new WeakMap<Node, MutationObserver>();
 const pendingPreviews = new Map<string, Promise<void>>();
 let configuredMaxSize = DEFAULT_IMAGE_CACHE_MAX_SIZE;
 let databasePromise: Promise<IDBDatabase | null> | null = null;
+let cacheGeneration = 0;
 
 function openDatabase(): Promise<IDBDatabase | null> {
   if (databasePromise) return databasePromise;
@@ -169,6 +175,7 @@ async function resizeImage(
 
 async function createPreview(image: HTMLImageElement, url: string): Promise<void> {
   if (pendingPreviews.has(url)) return pendingPreviews.get(url)!;
+  const generation = cacheGeneration;
 
   const task = (async () => {
     const sourceWidth = image.naturalWidth;
@@ -197,7 +204,7 @@ async function createPreview(image: HTMLImageElement, url: string): Promise<void
       }
     }
 
-    if (!preview) return;
+    if (!preview || generation !== cacheGeneration) return;
     await writePreview({
       url,
       blob: preview.blob,
@@ -420,5 +427,55 @@ export function configureImagePreviewCache(options: ImagePreviewCacheOptions): v
     void openDatabase().then((database) => {
       if (database) void pruneCache(database);
     });
+  }
+}
+
+function visibleManagedImages(): HTMLImageElement[] {
+  if (typeof document === 'undefined') return [];
+  const images = new Set<HTMLImageElement>();
+  const visit = (root: Document | ShadowRoot) => {
+    for (const image of Array.from(root.querySelectorAll('img'))) images.add(image);
+    for (const element of Array.from(root.querySelectorAll('*'))) {
+      if (element.shadowRoot) visit(element.shadowRoot);
+    }
+  };
+  visit(document);
+  return [...images];
+}
+
+/**
+ * Removes every persisted preview blob and releases previews currently shown
+ * by connected images. In-flight preview jobs are invalidated before the
+ * IndexedDB store is cleared, so they cannot repopulate it after this resolves.
+ */
+export async function clearImagePreviewCache(): Promise<ImagePreviewCacheClearResult> {
+  cacheGeneration += 1;
+
+  for (const image of visibleManagedImages()) {
+    const state = managedImages.get(image);
+    if (!state) continue;
+    state.token += 1;
+    restoreOriginal(image, state);
+  }
+
+  const database = await openDatabase();
+  if (!database) return { entries: 0, bytes: 0 };
+
+  try {
+    const read = database.transaction(STORE_NAME, 'readonly');
+    const cached = await requestResult(
+      read.objectStore(STORE_NAME).getAll() as IDBRequest<PreviewEntry[]>
+    ) || [];
+    const bytes = cached.reduce((total, entry) => total + (entry.size || entry.blob?.size || 0), 0);
+    const transaction = database.transaction(STORE_NAME, 'readwrite');
+    transaction.objectStore(STORE_NAME).clear();
+    await new Promise<void>((resolve) => {
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => resolve();
+      transaction.onabort = () => resolve();
+    });
+    return { entries: cached.length, bytes };
+  } catch {
+    return { entries: 0, bytes: 0 };
   }
 }

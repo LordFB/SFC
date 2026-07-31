@@ -1,4 +1,5 @@
 import {
+  clearImagePreviewCache,
   connectImagePreviewCache,
   stageImagePreviews
 } from './image-preview-cache';
@@ -13,6 +14,7 @@ import {
 
 export {
   configureImagePreviewCache,
+  clearImagePreviewCache,
   DEFAULT_IMAGE_CACHE_MAX_SIZE,
   IMAGE_CACHE_DISABLE_ATTRIBUTE
 } from './image-preview-cache';
@@ -23,6 +25,10 @@ export {
   realtimeValue
 } from './realtime';
 export type {
+  ImagePreviewCacheClearResult,
+  ImagePreviewCacheOptions
+} from './image-preview-cache';
+export type {
   RealtimeSetOptions,
   RealtimeSnapshot,
   RealtimeValueOptions
@@ -30,6 +36,12 @@ export type {
 
 // Template fragment cache for performance
 const templateCache = new Map<string, DocumentFragment>();
+
+/** Clears in-memory template fragments and persisted browser image blobs. */
+export async function clearSfcRuntimeCaches(): Promise<import('./image-preview-cache').ImagePreviewCacheClearResult> {
+  templateCache.clear();
+  return clearImagePreviewCache();
+}
 
 function getTemplateFragment(html: string): DocumentFragment {
   let frag = templateCache.get(html);
