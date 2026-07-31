@@ -1,7 +1,30 @@
 const REALTIME_VALUE = Symbol('sfc.realtime-value');
 const DEFAULT_ENDPOINT = '/__sfc/realtime';
+const PUBLIC_DEMO_PREFIXES = ['testing/showcase/', 'testing/benchmark/'] as const;
 const IS_DEVELOPMENT = Boolean((import.meta as ImportMeta & { env?: { DEV?: boolean } }).env?.DEV)
   || (typeof location !== 'undefined' && ['localhost', '127.0.0.1', '::1'].includes(location.hostname));
+
+function isPublicDemoKey(key: string): boolean {
+  return PUBLIC_DEMO_PREFIXES.some(prefix => key.startsWith(prefix));
+}
+
+function chunkRealtimeKeys(keys: string[]): string[][] {
+  const chunks: string[][] = [];
+  let chunk: string[] = [];
+  let encodedLength = 0;
+  for (const key of keys) {
+    const nextLength = `key=${encodeURIComponent(key)}`.length + (chunk.length ? 1 : 0);
+    if (chunk.length && (chunk.length >= 100 || encodedLength + nextLength > 6000)) {
+      chunks.push(chunk);
+      chunk = [];
+      encodedLength = 0;
+    }
+    chunk.push(key);
+    encodedLength += nextLength;
+  }
+  if (chunk.length) chunks.push(chunk);
+  return chunks;
+}
 
 export type RealtimeSnapshot<T> = {
   key: string;
@@ -50,24 +73,8 @@ class RealtimeHub {
       for (const source of this.sources) source.close();
       this.sources = [];
       const keys = [...this.listeners.keys()].sort();
-      const chunks: string[][] = [];
-      let chunk: string[] = [];
-      let encodedLength = 0;
-      for (const key of keys) {
-        const nextLength = `key=${encodeURIComponent(key)}`.length + (chunk.length ? 1 : 0);
-        if (chunk.length && (chunk.length >= 100 || encodedLength + nextLength > 6000)) {
-          chunks.push(chunk);
-          chunk = [];
-          encodedLength = 0;
-        }
-        chunk.push(key);
-        encodedLength += nextLength;
-      }
-      if (chunk.length) chunks.push(chunk);
-      if (!IS_DEVELOPMENT) {
-        const session = await window.shopAuth?.getSession().catch(() => null);
-        if (!session?.authenticated) return;
-      }
+      const permittedKeys = IS_DEVELOPMENT ? keys : keys.filter(isPublicDemoKey);
+      const chunks = chunkRealtimeKeys(permittedKeys);
       for (const keysInSource of chunks) {
         const query = new URLSearchParams();
         for (const key of keysInSource) query.append('key', key);
@@ -170,7 +177,7 @@ export class ReactiveRealtimeValue<T> {
   }
 
   private async write(method: 'PUT' | 'DELETE', value: T | undefined, expectedVersion?: number) {
-    if (IS_DEVELOPMENT) {
+    if (IS_DEVELOPMENT || isPublicDemoKey(this.key)) {
       const response = await fetch(`${this.endpoint}/value`, {
         method, headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -185,23 +192,7 @@ export class ReactiveRealtimeValue<T> {
       this.apply(result.value);
       return result.value as RealtimeSnapshot<T>;
     }
-    if (!window.shopAuth) throw new Error('Authenticated API client is unavailable');
-    try {
-      const result = await window.shopAuth.api(`${this.endpoint}/value`, {
-        method,
-        body: {
-        key: this.key,
-        ...(method === 'PUT' ? { value } : {}),
-        ...(expectedVersion === undefined ? {} : { expectedVersion })
-        },
-      });
-      this.apply(result.value);
-      return result.value as RealtimeSnapshot<T>;
-    } catch (error) {
-      const apiError = error as Error & { status?: number; data?: { current?: RealtimeSnapshot<T> } };
-      if (apiError.status === 409) throw new RealtimeConflictError(apiError.data?.current || null);
-      throw error;
-    }
+    throw new Error(`Realtime key "${this.key}" is not exposed by this production build`);
   }
 
   private apply(snapshot: RealtimeSnapshot<T> | null) {

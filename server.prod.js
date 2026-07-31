@@ -25,19 +25,11 @@ const PREVIEW_MODE = process.argv.includes('--preview');
 const DEMO_SERVICES_ENABLED = PREVIEW_MODE || process.env.ENABLE_DEMO_SERVICES === 'true';
 const HOST = PREVIEW_MODE ? '127.0.0.1' : process.env.HOST;
 const STATIC_DIR = path.join(__dirname, 'dist', 'public');
-let shopApiHandler = null;
 let realtimeService = null;
 if (DEMO_SERVICES_ENABLED) {
   const { createRealtimeService, createPublicDemoRealtimeAuthorizer } = await import('./realtime-db.js');
-  let authorizePrivateRealtime = async () => null;
-  const shopAuthConfigured = Boolean(process.env.AUTH_ORIGIN && process.env.AUTH_RP_ID);
-  if (PREVIEW_MODE || shopAuthConfigured) {
-    const { createShopApi } = await import('./shop-api.js');
-    shopApiHandler = createShopApi({ production: !PREVIEW_MODE, port: PORT });
-    authorizePrivateRealtime = shopApiHandler.authorizeRealtime;
-  }
   realtimeService = createRealtimeService({
-    authorize: createPublicDemoRealtimeAuthorizer(authorizePrivateRealtime),
+    authorize: createPublicDemoRealtimeAuthorizer(async () => null),
   });
 }
 const SECURITY_HEADERS = {
@@ -156,13 +148,13 @@ async function handle(req, res) {
     return;
   }
 
-  if (!DEMO_SERVICES_ENABLED && (urlPath.startsWith('/__sfc/realtime') || urlPath.startsWith('/shop/api/'))) {
+  if (!DEMO_SERVICES_ENABLED && urlPath.startsWith('/__sfc/realtime')) {
     res.writeHead(404, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
     res.end(JSON.stringify({ error: 'Not found' }));
     return;
   }
 
-  if (!shopApiHandler && urlPath.startsWith('/shop/api/')) {
+  if (urlPath.startsWith('/shop/')) {
     res.writeHead(404, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
     res.end(JSON.stringify({ error: 'Not found' }));
     return;
@@ -170,11 +162,6 @@ async function handle(req, res) {
 
   if (realtimeService && urlPath.startsWith('/__sfc/realtime')) {
     await realtimeService.handler(req, res, url);
-    return;
-  }
-
-  if (shopApiHandler && urlPath.startsWith('/shop/api/')) {
-    await shopApiHandler(req, res);
     return;
   }
 

@@ -30,6 +30,15 @@ test('plain class fields drive template bindings in the runtime and playground',
   assert.ok(bind >= 0 && userCallback > bind, 'playground should bind its template before user lifecycle code runs');
 });
 
+test('public realtime demos bypass shop authentication in production', () => {
+  const runtime = readFileSync(new URL('../src/runtime/realtime.ts', import.meta.url), 'utf8');
+
+  assert.match(runtime, /'testing\/showcase\/', 'testing\/benchmark\/'/, 'client and server must agree on public demo namespaces');
+  assert.match(runtime, /if \(IS_DEVELOPMENT \|\| isPublicDemoKey\(this\.key\)\)/, 'public demo writes should use direct same-origin fetch');
+  assert.match(runtime, /keys\.filter\(isPublicDemoKey\)/, 'production subscriptions should expose only public demo keys');
+  assert.doesNotMatch(runtime, /shopAuth|auth\/session/, 'realtime must not depend on the removed shop authentication client');
+});
+
 test('template directives bind component calls and instance hover styles without evaluating code', () => {
   const runtime = readFileSync(new URL('../src/runtime/directives.ts', import.meta.url), 'utf8');
   const playground = readFileSync(new URL('../components/docs/Playground.sfc', import.meta.url), 'utf8');

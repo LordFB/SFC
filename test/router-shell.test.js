@@ -41,7 +41,7 @@ test('production hides demo-only routes when server capabilities are unavailable
 test('production can mount public realtime demos without shop authentication', () => {
   const server = readFileSync(new URL('../server.prod.js', import.meta.url), 'utf8');
 
-  assert.match(server, /const shopAuthConfigured = Boolean\(process\.env\.AUTH_ORIGIN && process\.env\.AUTH_RP_ID\)/);
-  assert.match(server, /let authorizePrivateRealtime = async \(\) => null/);
-  assert.match(server, /createPublicDemoRealtimeAuthorizer\(authorizePrivateRealtime\)/);
+  assert.match(server, /createPublicDemoRealtimeAuthorizer\(async \(\) => null\)/);
+  assert.doesNotMatch(server, /createShopApi|shopApiHandler|AUTH_ORIGIN|AUTH_RP_ID/);
+  assert.match(server, /urlPath\.startsWith\('\/shop\/'\)/, 'removed shop URLs should return a real 404');
 });

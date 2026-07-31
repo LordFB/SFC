@@ -18,7 +18,6 @@ import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import zlib from 'zlib';
 import { createHash } from 'crypto';
-import { createShopApi } from './shop-api.js';
 import { createRealtimeService, createPublicDemoRealtimeAuthorizer } from './realtime-db.js';
 import { extractComponentTag } from './src/sfc-metadata.js';
 
@@ -69,10 +68,9 @@ const args = process.argv.slice(2);
 const PORT = parseInt(args.find(a => a.startsWith('--port='))?.split('=')[1] || '5173', 10);
 const PROD_MODE = args.includes('--prod');
 const DEV_HOST = process.env.DEV_HOST || '127.0.0.1';
-const shopApiHandler = createShopApi({ production: PROD_MODE, port: PORT });
 const realtimeService = createRealtimeService({
   authorize: PROD_MODE
-    ? createPublicDemoRealtimeAuthorizer(shopApiHandler.authorizeRealtime)
+    ? createPublicDemoRealtimeAuthorizer(async () => null)
     : async () => ({ scope: 'loopback-documentation' }),
 });
 
@@ -634,11 +632,6 @@ async function handleRequest(req, res) {
       
       res.writeHead(200, headers);
       res.end(compressedContent);
-      return;
-    }
-    
-    if (urlPath.startsWith('/shop/api/')) {
-      await shopApiHandler(req, res);
       return;
     }
     
