@@ -30,6 +30,8 @@ database rows into deployable HTML and JSON route blobs.
   is visited or predictively preloaded.
 - **Persistent image previews** — images automatically reuse quarter-resolution
   WebP previews from an LRU browser cache while the full source loads.
+- **Realtime reactive values** — persistent SQLite values fan out over SSE and
+  update SFC template bindings without a virtual DOM.
 - **SPA navigation with real URLs** — links, history navigation, clean refreshes,
   and the View Transition API work together.
 - **Integrated shop API** — products, cart operations, checkout, and orders use
@@ -61,6 +63,16 @@ Production authentication fails closed unless `AUTH_ORIGIN` is an HTTPS public
 origin and its hostname exactly matches `AUTH_RP_ID`. Terminate TLS at the
 application or its reverse proxy. Set `PORT` to change the production port; the
 development server accepts `--port=<number>`.
+
+To preview the built application locally without production TLS configuration:
+
+```bash
+npm run build
+npm run serve:preview
+```
+
+The preview server binds only to `127.0.0.1` and uses non-production session
+cookies. It is intended for local testing, including the `/testing` suite.
 
 Customer accounts use normalized email addresses and passwords hashed with
 Argon2id. Authentication is carried by hashed, server-side session records and
@@ -94,6 +106,53 @@ No image attributes are required. Opt a specific image out with
 Cross-origin images are cached when their host permits CORS. If IndexedDB,
 canvas encoding, or CORS access is unavailable, the image keeps its normal
 browser loading behavior.
+
+## Realtime reactive values
+
+The dev and production servers expose the same persistent pub/sub database.
+Declare a `realtimeValue` as an SFC class field and use the field name in a
+template expression:
+
+```html
+<template>
+  <p>Shared count: {{sharedCount}}</p>
+  <button class="increment">Increment</button>
+</template>
+
+<script lang="ts">
+import { realtimeValue } from '../../src/runtime';
+
+export default class extends HTMLElement {
+  static tag = 'shared-counter';
+  sharedCount = realtimeValue('demo/shared-count', 0);
+
+  connectedCallback() {
+    Promise.resolve().then(() => {
+      this.querySelector('.increment')?.addEventListener('click', () => {
+        void this.sharedCount.update(count => count + 1);
+      });
+    });
+  }
+}
+</script>
+```
+
+The component runtime opens and releases subscriptions with the custom-element
+lifecycle. `{{fieldName}}` bindings work in text and attributes. Use
+`value.subscribe(listener)` for imperative rendering, `value.set(next)` for an
+unconditional write, and `value.update(fn)` for a compare-and-set loop that
+does not lose concurrent updates.
+
+Values are JSON, keys are limited to 256 characters, payloads to 64 KiB, and
+each SSE connection can multiplex 100 keys. The browser client automatically
+shards larger sets. SQLite WAL mode serializes writes, version checks provide
+optimistic concurrency, slow subscribers have bounded queues, and a retained
+event log propagates changes between server processes sharing the same
+`realtime.db`. Set `REALTIME_DB_PATH` to choose another database file.
+
+Realtime keys are application-public by default: anyone who can reach the app
+can read or write them. Same-origin checks prevent browser CSRF writes, but
+private or per-user data still belongs behind an authenticated server API.
 
 ## How the build works
 

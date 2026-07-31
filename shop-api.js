@@ -73,7 +73,10 @@ export function createShopApi({
 
   if (production) {
     if (!configuredOrigin || !configuredRPID) {
-      throw new Error('AUTH_ORIGIN and AUTH_RP_ID are required in production');
+      throw new Error(
+        'AUTH_ORIGIN and AUTH_RP_ID are required in production. ' +
+        'For a local built-app preview, run "npm run serve:preview".'
+      );
     }
     if (parsedOrigin.protocol !== 'https:' || parsedOrigin.hostname !== configuredRPID) {
       throw new Error('AUTH_ORIGIN must be HTTPS and its hostname must equal AUTH_RP_ID');

@@ -4,11 +4,12 @@
  *
  * Usage:
  *   npm run build        # build frontend into dist/public/
- *   npm run start        # start this server
+ *   npm run serve        # start this server with production security
+ *   npm run serve:preview # preview the production build on localhost
  *
  * Environment variables:
  *   PORT          — HTTP port (default 3000)
- *   NODE_ENV      — set to 'production' automatically by the start script
+ *   HOST          — production bind address (default: all interfaces)
  */
 
 import http from 'http';
@@ -18,11 +19,15 @@ import { fileURLToPath } from 'url';
 import zlib from 'zlib';
 import { createHash } from 'crypto';
 import { createShopApi } from './shop-api.js';
+import { createRealtimeService } from './realtime-db.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = parseInt(process.env.PORT || '3000', 10);
+const PREVIEW_MODE = process.argv.includes('--preview');
+const HOST = PREVIEW_MODE ? '127.0.0.1' : process.env.HOST;
 const STATIC_DIR = path.join(__dirname, 'dist', 'public');
-const shopApiHandler = createShopApi({ production: true, port: PORT });
+const shopApiHandler = createShopApi({ production: !PREVIEW_MODE, port: PORT });
+const realtimeService = createRealtimeService();
 
 // ─── MIME types ──────────────────────────────────────────────────────
 const MIME = {
@@ -104,6 +109,11 @@ async function handle(req, res) {
   const url = new URL(req.url, `http://localhost:${PORT}`);
   const urlPath = url.pathname;
 
+  if (urlPath.startsWith('/__sfc/realtime')) {
+    await realtimeService.handler(req, res, url);
+    return;
+  }
+
   if (urlPath.startsWith('/shop/api/')) {
     await shopApiHandler(req, res);
     return;
@@ -147,13 +157,17 @@ if (!fs.existsSync(STATIC_DIR)) {
 }
 
 const server = http.createServer({ keepAlive: true, keepAliveTimeout: 5000 }, handle);
-server.listen(PORT, () => {
+server.listen({ port: PORT, ...(HOST ? { host: HOST } : {}) }, () => {
+  const displayHost = PREVIEW_MODE ? 'localhost' : (HOST || 'localhost');
   console.log(`
-  SFC Production Server
+  SFC ${PREVIEW_MODE ? 'Production Build Preview' : 'Production Server'}
   ─────────────────────
-  http://localhost:${PORT}
+  http://${displayHost}:${PORT}
   Serving from: ${STATIC_DIR}
 `);
 });
 
-process.on('SIGINT', () => { server.close(() => process.exit(0)); });
+process.on('SIGINT', () => {
+  realtimeService.close();
+  server.close(() => process.exit(0));
+});

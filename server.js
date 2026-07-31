@@ -19,6 +19,7 @@ import { fileURLToPath, pathToFileURL } from 'url';
 import zlib from 'zlib';
 import { createHash } from 'crypto';
 import { createShopApi } from './shop-api.js';
+import { createRealtimeService } from './realtime-db.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -67,6 +68,7 @@ const args = process.argv.slice(2);
 const PORT = parseInt(args.find(a => a.startsWith('--port='))?.split('=')[1] || '5173', 10);
 const PROD_MODE = args.includes('--prod');
 const shopApiHandler = createShopApi({ production: PROD_MODE, port: PORT });
+const realtimeService = createRealtimeService();
 
 // MIME types for common file extensions
 const MIME_TYPES = {
@@ -445,6 +447,11 @@ async function handleRequest(req, res) {
       res.write(': connected\n\n');
       liveReloadClients.add(res);
       req.on('close', () => liveReloadClients.delete(res));
+      return;
+    }
+
+    if (urlPath.startsWith('/__sfc/realtime')) {
+      await realtimeService.handler(req, res, reqUrl);
       return;
     }
     
@@ -839,6 +846,7 @@ process.on('SIGINT', () => {
   clearTimeout(reloadTimer);
   for (const watcher of fileWatchers) watcher.close();
   for (const client of liveReloadClients) client.end();
+  realtimeService.close();
   server.close(() => {
     process.exit(0);
   });

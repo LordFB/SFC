@@ -2,12 +2,27 @@ import {
   connectImagePreviewCache,
   stageImagePreviews
 } from './image-preview-cache';
+import {
+  connectRealtimeComponent,
+  disconnectRealtimeComponent
+} from './realtime';
 
 export {
   configureImagePreviewCache,
   DEFAULT_IMAGE_CACHE_MAX_SIZE,
   IMAGE_CACHE_DISABLE_ATTRIBUTE
 } from './image-preview-cache';
+export {
+  ReactiveRealtimeValue,
+  RealtimeConflictError,
+  isRealtimeValue,
+  realtimeValue
+} from './realtime';
+export type {
+  RealtimeSetOptions,
+  RealtimeSnapshot,
+  RealtimeValueOptions
+} from './realtime';
 
 // Template fragment cache for performance
 const templateCache = new Map<string, DocumentFragment>();
@@ -232,6 +247,7 @@ export function defineComponent(optsOrCtor: any) {
           } catch (e) {}
           ((this.constructor as any).__sfc_attach || (() => {}))(mountRoot);
           connectImagePreviewCache(mountRoot);
+          connectRealtimeComponent(this as any, mountRoot);
           // defer wiring to next microtask so subclass connectedCallback can finish DOM changes
           try {
             Promise.resolve().then(()=>{
@@ -343,6 +359,7 @@ export function defineComponent(optsOrCtor: any) {
           } catch (e) { console.error(e); }
         }
         disconnectedCallback() {
+          disconnectRealtimeComponent(this as any);
           try {
             const list = (this as any).__sfc_listeners || [];
             for (const it of list) {
@@ -406,6 +423,7 @@ export function defineComponent(optsOrCtor: any) {
       }
       // interpolate template
       interpolateTemplate(mountRoot, (this as any).params || {});
+      connectRealtimeComponent(this as any, mountRoot);
       // call user connectedCallback
       if (opts.connectedCallback) {
         try { opts.connectedCallback.call(this); } catch (e) { console.error(e); }
@@ -434,6 +452,7 @@ export function defineComponent(optsOrCtor: any) {
       // already invoked above; do not call twice
     }
     disconnectedCallback() {
+      disconnectRealtimeComponent(this as any);
       if (opts.disconnectedCallback) {
         try { opts.disconnectedCallback.call(this); } catch (e) { console.error(e); }
       }

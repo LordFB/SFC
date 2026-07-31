@@ -1,0 +1,749 @@
+<template>
+  <main class="lab">
+    <header class="topbar">
+      <a class="brand" href="/shop/"><span class="brand-mark">S</span><span>SFC LABS</span></a>
+      <div class="topbar-actions">
+        <span class="connection"><i></i> REALTIME ONLINE</span>
+        <a class="back-link" href="/shop/">Back to shop</a>
+      </div>
+    </header>
+
+    <section class="hero">
+      <div class="eyebrow"><span>EXPERIMENT 07</span><i></i><span>REALTIME DATABASE</span></div>
+      <h1>Break it.<br><em>We dare you.</em></h1>
+      <p class="hero-copy">A live torture chamber for SFC reactivity, pub/sub delivery,
+        persistence, and concurrent writes. Every number below is measured in your browser.</p>
+      <div class="hero-actions">
+        <button class="primary-action" id="run-all">Run full suite <span>→</span></button>
+        <label class="load-profile">LOAD
+          <select id="load-size" aria-label="Concurrent write count">
+            <option value="50">50 writes</option>
+            <option value="200" selected>200 writes</option>
+            <option value="500">500 writes</option>
+          </select>
+        </label>
+      </div>
+    </section>
+
+    <section class="scoreboard" aria-label="Latest test metrics">
+      <article class="metric-card" data-metric="suite">
+        <button class="metric-info" data-tooltip-toggle aria-expanded="false" aria-describedby="suite-insight"><span>SUITE</span><i>i</i></button>
+        <strong id="suite-score">0 / 5</strong><small>checks passing</small>
+        <div class="metric-tooltip" id="suite-insight" role="tooltip">
+          <div class="tooltip-top"><span>CONFIDENCE MAP</span><b>01 / COVERAGE</b></div>
+          <div class="suite-visual">
+            <div class="suite-ring" id="suite-ring" style="--score: 0deg"><span id="suite-percent">0%</span></div>
+            <div><strong id="suite-tooltip-score">0 of 5</strong><p>independent browser checks currently passing</p></div>
+          </div>
+          <div class="coverage-list">
+            <span data-coverage="reactive"><i></i>DOM binding</span><span data-coverage="latency"><i></i>SSE delivery</span>
+            <span data-coverage="burst"><i></i>Write load</span><span data-coverage="cas"><i></i>Atomic CAS</span>
+            <span data-coverage="persistence"><i></i>Persistence</span>
+          </div>
+          <p class="insight-copy"><b>What this proves.</b> The score combines five different failure domains. It is a coverage indicator, not an average: one failed check remains visible even when every performance number looks healthy.</p>
+        </div>
+      </article>
+      <article class="metric-card" data-metric="throughput">
+        <button class="metric-info" data-tooltip-toggle aria-expanded="false" aria-describedby="throughput-insight"><span>THROUGHPUT</span><i>i</i></button>
+        <strong id="throughput-score">—</strong><small>writes / second</small>
+        <div class="metric-tooltip" id="throughput-insight" role="tooltip">
+          <div class="tooltip-top"><span>ROLLING RUNS</span><b>02 / VELOCITY</b></div>
+          <div class="chart-value"><strong id="throughput-tooltip-value">—</strong><span>OPS / SEC</span></div>
+          <svg class="sparkline" viewBox="0 0 280 72" preserveAspectRatio="none" aria-label="Throughput history chart">
+            <path class="grid-line" d="M0 12H280 M0 36H280 M0 60H280"></path>
+            <polyline id="throughput-line" points="" vector-effect="non-scaling-stroke"></polyline>
+          </svg>
+          <div class="chart-axis"><span>OLDER</span><span id="throughput-samples">NO SAMPLES YET</span><span>LATEST</span></div>
+          <div class="formula"><span>successful writes</span><i>÷</i><span>wall-clock seconds</span></div>
+          <p class="insight-copy"><b>Read it honestly.</b> This includes browser scheduling, HTTP, JSON parsing, SQLite WAL commits, and 32 concurrent workers. It is client-observed throughput, not an isolated database microbenchmark.</p>
+        </div>
+      </article>
+      <article class="metric-card" data-metric="p95">
+        <button class="metric-info" data-tooltip-toggle aria-expanded="false" aria-describedby="p95-insight"><span>P95 RESPONSE</span><i>i</i></button>
+        <strong id="p95-score">—</strong><small>milliseconds</small>
+        <div class="metric-tooltip align-right" id="p95-insight" role="tooltip">
+          <div class="tooltip-top"><span>LAST-RUN DISTRIBUTION</span><b>03 / TAIL</b></div>
+          <div class="chart-value"><strong id="p95-tooltip-value">—</strong><span>95TH PERCENTILE</span></div>
+          <div class="histogram" id="latency-histogram" aria-label="Response time histogram">
+            <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+          </div>
+          <div class="chart-axis"><span>FASTEST</span><span id="latency-range">RUN BURST TO POPULATE</span><span>SLOWEST</span></div>
+          <div class="percentile-row"><span><i>P50</i><b id="p50-detail">—</b></span><span><i>P95</i><b id="p95-detail">—</b></span><span><i>MAX</i><b id="max-detail">—</b></span></div>
+          <p class="insight-copy"><b>Why p95 matters.</b> Median latency describes the typical write; p95 exposes queueing and event-loop pressure. Ninety-five percent of measured responses completed at or below this value.</p>
+        </div>
+      </article>
+      <article class="metric-card" data-metric="latency">
+        <button class="metric-info" data-tooltip-toggle aria-expanded="false" aria-describedby="latency-insight"><span>PUB/SUB LATENCY</span><i>i</i></button>
+        <strong id="latency-score">—</strong><small>server → browser</small>
+        <div class="metric-tooltip align-right" id="latency-insight" role="tooltip">
+          <div class="tooltip-top"><span>EVENT DELIVERY</span><b>04 / WIRE</b></div>
+          <div class="chart-value"><strong id="latency-tooltip-value">—</strong><span>MATCHED SSE EVENT</span></div>
+          <svg class="sparkline latency-sparkline" viewBox="0 0 280 72" preserveAspectRatio="none" aria-label="Pub/sub latency history chart">
+            <path class="grid-line" d="M0 12H280 M0 36H280 M0 60H280"></path>
+            <polyline id="latency-line" points="" vector-effect="non-scaling-stroke"></polyline>
+          </svg>
+          <div class="chart-axis"><span>OLDER</span><span id="latency-samples">NO SAMPLES YET</span><span>LATEST</span></div>
+          <div class="delivery-path"><span>PUT</span><i></i><span>WAL COMMIT</span><i></i><span>FAN-OUT</span><i></i><span>EVENT</span></div>
+          <p class="insight-copy"><b>Measurement boundary.</b> The timer starts immediately before the write and stops on the matching token in a fresh SSE stream. Connection setup is excluded; commit, fan-out, transport, parsing, and browser scheduling are included.</p>
+        </div>
+      </article>
+    </section>
+
+    <section class="shared-demo">
+      <div>
+        <p class="section-kicker">LIVE MULTI-TAB DEMO</p>
+        <h2>One value. Every client.</h2>
+        <p>Open this route in another tab. Changes arrive through the shared SSE transport
+          and update native template bindings automatically.</p>
+      </div>
+      <div class="shared-counter">
+        <button id="decrement" aria-label="Decrement shared counter">−</button>
+        <output id="reactive-value">{{sharedCounter}}</output>
+        <button id="increment" aria-label="Increment shared counter">+</button>
+        <small>REVISION <b id="shared-version">0</b></small>
+      </div>
+      <form class="message-form" id="message-form">
+        <label for="message-input">SHARED BROADCAST</label>
+        <div><input id="message-input" maxlength="80" placeholder="Send a message to every open client"><button>Publish</button></div>
+        <blockquote>“{{liveMessage}}”</blockquote>
+      </form>
+    </section>
+
+    <section class="test-section">
+      <div class="section-heading">
+        <div><p class="section-kicker">THE GAUNTLET</p><h2>Five ways to prove it.</h2></div>
+        <p>Each check hits the real production-shaped endpoint. No mocked transport,
+          no synthetic scores, no precomputed victory lap.</p>
+      </div>
+
+      <div class="test-grid">
+        <article class="test-card" data-test="reactive">
+          <div class="test-number">01</div><span class="test-status">READY</span>
+          <h3>Reactive binding</h3>
+          <p>Writes a versioned value and confirms the SFC <code>{<!-- -->{field}<!-- -->}</code>
+            binding changed without rerendering the component.</p>
+          <div class="result" id="reactive-result">Awaiting run</div>
+          <button class="run-test" data-run="reactive">Run binding test <span>↗</span></button>
+        </article>
+
+        <article class="test-card featured" data-test="latency">
+          <div class="test-number">02</div><span class="test-status">READY</span>
+          <h3>Wire latency</h3>
+          <p>Opens a fresh event stream, writes a unique token, and clocks the matching
+            SSE event—not the HTTP response.</p>
+          <div class="result" id="latency-result">Awaiting run</div>
+          <button class="run-test" data-run="latency">Measure pub/sub <span>↗</span></button>
+        </article>
+
+        <article class="test-card" data-test="burst">
+          <div class="test-number">03</div><span class="test-status">READY</span>
+          <h3>Concurrent burst</h3>
+          <p>Drives up to 500 writes through 32 concurrent workers and reports measured
+            throughput, median, and p95 response time.</p>
+          <div class="result" id="burst-result">Awaiting run</div>
+          <button class="run-test" data-run="burst">Start load test <span>↗</span></button>
+        </article>
+
+        <article class="test-card" data-test="cas">
+          <div class="test-number">04</div><span class="test-status">READY</span>
+          <h3>CAS collision</h3>
+          <p>Sends 32 writers at one version. Atomic compare-and-set must produce exactly
+            one winner and 31 clean conflicts.</p>
+          <div class="result" id="cas-result">Awaiting run</div>
+          <button class="run-test" data-run="cas">Trigger collision <span>↗</span></button>
+        </article>
+
+        <article class="test-card wide" data-test="persistence">
+          <div class="test-number">05</div><span class="test-status">READY</span>
+          <h3>Persistence readback</h3>
+          <p>Commits a random JSON payload to SQLite, reads it through a separate request,
+            and verifies the payload and monotonic version survived the round trip.</p>
+          <div class="result" id="persistence-result">Awaiting run</div>
+          <button class="run-test" data-run="persistence">Verify storage <span>↗</span></button>
+        </article>
+      </div>
+    </section>
+
+    <section class="console-section">
+      <div class="console-head"><span><i></i><i></i><i></i></span><b>realtime-suite.log</b><button id="clear-log">CLEAR</button></div>
+      <ol id="activity-log" aria-live="polite"><li><time>BOOT</time><span>Testing console ready. Choose a check or run the full suite.</span></li></ol>
+    </section>
+
+    <footer>
+      <span>SFC / NATIVE CUSTOM ELEMENTS / SQLITE WAL / SERVER-SENT EVENTS</span>
+      <b>NO VIRTUAL DOM WAS HARMED.</b>
+    </footer>
+  </main>
+</template>
+
+<script lang="ts">
+import { realtimeValue } from '/src/runtime/index.ts';
+
+type TestName = 'reactive' | 'latency' | 'burst' | 'cas' | 'persistence';
+type TestResult = { detail: string; metric?: number };
+
+export default class extends HTMLElement {
+  static tag = 'testing-suite';
+  static shadow = true;
+
+  sharedCounter = realtimeValue('testing/showcase/counter', 0);
+  liveMessage = realtimeValue('testing/showcase/message', 'The channel is quiet.');
+
+  private cleanup: Array<() => void> = [];
+  private eventSources = new Set<EventSource>();
+  private controllers = new Set<AbortController>();
+  private running = new Set<TestName>();
+  private passed = new Set<TestName>();
+  private throughputHistory: number[] = [];
+  private latencyHistory: number[] = [];
+
+  connectedCallback() {
+    Promise.resolve().then(() => {
+      const root = this.shadowRoot;
+      if (!root || this.cleanup.length) return;
+      this.listen(root.querySelector('#run-all'), 'click', this.runAll);
+      this.listen(root.querySelector('#increment'), 'click', this.increment);
+      this.listen(root.querySelector('#decrement'), 'click', this.decrement);
+      this.listen(root.querySelector('#message-form'), 'submit', this.publishMessage);
+      this.listen(root.querySelector('#clear-log'), 'click', this.clearLog);
+      root.querySelectorAll('[data-run]').forEach(button => {
+        const name = button.getAttribute('data-run') as TestName;
+        const handler = () => void this.runOne(name);
+        button.addEventListener('click', handler);
+        this.cleanup.push(() => button.removeEventListener('click', handler));
+      });
+      root.querySelectorAll('[data-tooltip-toggle]').forEach(button => {
+        const handler = (event: Event) => this.toggleMetricTooltip(event.currentTarget as HTMLButtonElement);
+        button.addEventListener('click', handler);
+        this.cleanup.push(() => button.removeEventListener('click', handler));
+      });
+      this.listen(root, 'pointerdown', this.closeTooltipInside);
+      window.addEventListener('pointerdown', this.closeTooltipFromOutside);
+      window.addEventListener('keydown', this.closeTooltipFromKeyboard);
+      this.cleanup.push(() => window.removeEventListener('pointerdown', this.closeTooltipFromOutside));
+      this.cleanup.push(() => window.removeEventListener('keydown', this.closeTooltipFromKeyboard));
+      this.cleanup.push(this.sharedCounter.subscribe((_value, snapshot) => {
+        this.text('#shared-version', String(snapshot?.version || 0));
+      }));
+      this.renderSuiteInsight();
+      this.log('PUBSUB', 'Lifecycle subscription connected; shared values are live.');
+    });
+  }
+
+  disconnectedCallback() {
+    for (const dispose of this.cleanup.splice(0)) dispose();
+    for (const source of this.eventSources) source.close();
+    this.eventSources.clear();
+    for (const controller of this.controllers) controller.abort();
+    this.controllers.clear();
+  }
+
+  private listen(target: EventTarget | null, type: string, handler: EventListener) {
+    if (!target) return;
+    target.addEventListener(type, handler);
+    this.cleanup.push(() => target.removeEventListener(type, handler));
+  }
+
+  private increment = () => void this.changeCounter(1);
+  private decrement = () => void this.changeCounter(-1);
+
+  private async changeCounter(delta: number) {
+    try {
+      const snapshot = await this.sharedCounter.update(value => value + delta);
+      this.log('SYNC', `Shared counter committed at revision ${snapshot.version}.`);
+    } catch (error) {
+      this.log('ERROR', this.errorMessage(error));
+    }
+  }
+
+  private publishMessage = (event: Event) => {
+    event.preventDefault();
+    const input = this.shadowRoot?.querySelector('#message-input') as HTMLInputElement | null;
+    const message = input?.value.trim();
+    if (!message) return;
+    input.value = '';
+    void this.liveMessage.set(message)
+      .then(snapshot => this.log('SYNC', `Broadcast published at revision ${snapshot.version}.`))
+      .catch(error => this.log('ERROR', this.errorMessage(error)));
+  };
+
+  private runAll = async () => {
+    const button = this.shadowRoot?.querySelector('#run-all') as HTMLButtonElement | null;
+    if (button?.disabled) return;
+    if (button) button.disabled = true;
+    this.log('SUITE', 'Full five-check suite started.');
+    for (const name of ['reactive', 'latency', 'burst', 'cas', 'persistence'] as TestName[]) {
+      await this.runOne(name);
+    }
+    this.log('SUITE', `${this.passed.size}/5 checks passing.`);
+    if (button) button.disabled = false;
+  };
+
+  private async runOne(name: TestName) {
+    if (this.running.has(name)) return;
+    this.running.add(name);
+    this.setState(name, 'RUNNING');
+    const started = performance.now();
+    try {
+      const result = await ({
+        reactive: () => this.testReactive(),
+        latency: () => this.testLatency(),
+        burst: () => this.testBurst(),
+        cas: () => this.testCas(),
+        persistence: () => this.testPersistence()
+      })[name]();
+      this.passed.add(name);
+      this.setState(name, 'PASSED', result.detail);
+      this.log('PASS', `${name.toUpperCase()} — ${result.detail}`);
+    } catch (error) {
+      const message = this.errorMessage(error);
+      this.passed.delete(name);
+      this.setState(name, 'FAILED', message);
+      this.log('FAIL', `${name.toUpperCase()} — ${message}`);
+    } finally {
+      this.running.delete(name);
+      this.text('#suite-score', `${this.passed.size} / 5`);
+      this.renderSuiteInsight();
+      this.log('TIME', `${name.toUpperCase()} completed in ${(performance.now() - started).toFixed(1)} ms.`);
+    }
+  }
+
+  private async testReactive(): Promise<TestResult> {
+    const next = this.sharedCounter.value + 1;
+    const snapshot = await this.sharedCounter.set(next);
+    const rendered = this.shadowRoot?.querySelector('#reactive-value')?.textContent?.trim();
+    if (rendered !== String(next)) throw new Error(`DOM rendered "${rendered}", expected "${next}"`);
+    return { detail: `DOM updated to ${next} at revision ${snapshot.version}` };
+  }
+
+  private async testLatency(): Promise<TestResult> {
+    const key = 'testing/benchmark/latency';
+    const token = crypto.randomUUID();
+    const source = new EventSource(`/__sfc/realtime/events?key=${encodeURIComponent(key)}`);
+    this.eventSources.add(source);
+    await this.waitForSource(source);
+    const started = performance.now();
+    let deliveryTimeout = 0;
+    const delivered = new Promise<number>((resolve, reject) => {
+      deliveryTimeout = window.setTimeout(() => reject(new Error('SSE delivery timed out after 5 seconds')), 5000);
+      source.addEventListener('value', event => {
+        const snapshot = JSON.parse((event as MessageEvent).data);
+        if (snapshot.value?.token !== token) return;
+        clearTimeout(deliveryTimeout);
+        resolve(performance.now() - started);
+      });
+    });
+    try {
+      const response = await this.write(key, { token, sentAt: Date.now() });
+      if (!response.ok) throw new Error(`Write returned HTTP ${response.status}`);
+      await response.json();
+      const latency = await delivered;
+      this.text('#latency-score', `${latency.toFixed(1)} ms`);
+      this.text('#latency-tooltip-value', `${latency.toFixed(1)} ms`);
+      this.latencyHistory.push(latency);
+      this.latencyHistory = this.latencyHistory.slice(-12);
+      this.renderSparkline('#latency-line', this.latencyHistory);
+      this.text('#latency-samples', `${this.latencyHistory.length} MEASURED RUN${this.latencyHistory.length === 1 ? '' : 'S'}`);
+      return { detail: `Matching SSE event arrived in ${latency.toFixed(1)} ms`, metric: latency };
+    } finally {
+      clearTimeout(deliveryTimeout);
+      source.close();
+      this.eventSources.delete(source);
+    }
+  }
+
+  private async testBurst(): Promise<TestResult> {
+    const select = this.shadowRoot?.querySelector('#load-size') as HTMLSelectElement | null;
+    const count = Math.min(500, Math.max(1, Number(select?.value || 200)));
+    const run = crypto.randomUUID();
+    const timings: number[] = [];
+    const started = performance.now();
+    const results = await this.mapConcurrent(
+      Array.from({ length: count }, (_, index) => index),
+      32,
+      async index => {
+        const requestStarted = performance.now();
+        const response = await this.write('testing/benchmark/burst', { run, index });
+        await response.json();
+        timings.push(performance.now() - requestStarted);
+        return response.status;
+      }
+    );
+    const elapsed = performance.now() - started;
+    if (results.some(status => status !== 200)) {
+      throw new Error(`${results.filter(status => status !== 200).length} writes failed`);
+    }
+    timings.sort((a, b) => a - b);
+    const p50 = this.percentile(timings, .5);
+    const p95 = this.percentile(timings, .95);
+    const throughput = count / elapsed * 1000;
+    this.text('#throughput-score', Math.round(throughput).toLocaleString());
+    this.text('#p95-score', `${p95.toFixed(1)} ms`);
+    this.text('#throughput-tooltip-value', Math.round(throughput).toLocaleString());
+    this.text('#p95-tooltip-value', `${p95.toFixed(1)} ms`);
+    this.text('#p50-detail', `${p50.toFixed(1)} ms`);
+    this.text('#p95-detail', `${p95.toFixed(1)} ms`);
+    this.text('#max-detail', `${timings[timings.length - 1].toFixed(1)} ms`);
+    this.text('#latency-range', `${timings[0].toFixed(1)} — ${timings[timings.length - 1].toFixed(1)} MS`);
+    this.throughputHistory.push(throughput);
+    this.throughputHistory = this.throughputHistory.slice(-12);
+    this.renderSparkline('#throughput-line', this.throughputHistory);
+    this.renderHistogram(timings);
+    this.text('#throughput-samples', `${this.throughputHistory.length} MEASURED RUN${this.throughputHistory.length === 1 ? '' : 'S'}`);
+    return { detail: `${count} writes · ${Math.round(throughput).toLocaleString()} ops/s · p50 ${p50.toFixed(1)} ms · p95 ${p95.toFixed(1)} ms`, metric: throughput };
+  }
+
+  private async testCas(): Promise<TestResult> {
+    const key = 'testing/benchmark/cas';
+    const currentResponse = await fetch(`/__sfc/realtime/value?key=${encodeURIComponent(key)}`, { cache: 'no-store' });
+    const currentBody = await currentResponse.json();
+    const version = currentBody.value?.version || 0;
+    const token = crypto.randomUUID();
+    const attempts = await Promise.all(Array.from({ length: 32 }, (_, contender) =>
+      this.write(key, { token, contender }, version)
+    ));
+    const statuses = attempts.map(response => response.status);
+    await Promise.all(attempts.map(response => response.json()));
+    const winners = statuses.filter(status => status === 200).length;
+    const conflicts = statuses.filter(status => status === 409).length;
+    if (winners !== 1 || conflicts !== 31) {
+      throw new Error(`Expected 1 winner / 31 conflicts, received ${winners} / ${conflicts}`);
+    }
+    return { detail: '1 atomic winner · 31 clean HTTP 409 conflicts' };
+  }
+
+  private async testPersistence(): Promise<TestResult> {
+    const key = 'testing/benchmark/persistence';
+    const payload = { token: crypto.randomUUID(), nested: { valid: true }, writtenAt: Date.now() };
+    const committed = await this.write(key, payload);
+    if (!committed.ok) throw new Error(`Commit returned HTTP ${committed.status}`);
+    const commitBody = await committed.json();
+    const read = await fetch(`/__sfc/realtime/value?key=${encodeURIComponent(key)}`, { cache: 'no-store' });
+    const readBody = await read.json();
+    if (!read.ok || JSON.stringify(readBody.value?.value) !== JSON.stringify(payload)) {
+      throw new Error('Readback payload did not match the committed JSON');
+    }
+    if (readBody.value.version !== commitBody.value.version) {
+      throw new Error('Readback version did not match the committed version');
+    }
+    return { detail: `JSON verified at persistent revision ${readBody.value.version}` };
+  }
+
+  private write(key: string, value: unknown, expectedVersion?: number) {
+    const controller = new AbortController();
+    this.controllers.add(controller);
+    return fetch('/__sfc/realtime/value', {
+      method: 'PUT',
+      signal: controller.signal,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key, value, ...(expectedVersion === undefined ? {} : { expectedVersion }) })
+    }).finally(() => this.controllers.delete(controller));
+  }
+
+  private waitForSource(source: EventSource) {
+    return new Promise<void>((resolve, reject) => {
+      if (source.readyState === EventSource.OPEN) return resolve();
+      const timeout = window.setTimeout(() => reject(new Error('Could not open SSE connection')), 5000);
+      source.addEventListener('open', () => { clearTimeout(timeout); resolve(); }, { once: true });
+      source.addEventListener('error', () => {
+        if (source.readyState === EventSource.CLOSED) {
+          clearTimeout(timeout);
+          reject(new Error('SSE connection closed before opening'));
+        }
+      });
+    });
+  }
+
+  private async mapConcurrent<T, R>(values: T[], concurrency: number, worker: (value: T) => Promise<R>) {
+    const results = new Array<R>(values.length);
+    let next = 0;
+    await Promise.all(Array.from({ length: Math.min(concurrency, values.length) }, async () => {
+      while (next < values.length) {
+        const index = next++;
+        results[index] = await worker(values[index]);
+      }
+    }));
+    return results;
+  }
+
+  private percentile(values: number[], point: number) {
+    return values[Math.min(values.length - 1, Math.max(0, Math.ceil(values.length * point) - 1))] || 0;
+  }
+
+  private toggleMetricTooltip(button: HTMLButtonElement) {
+    const card = button.closest('.metric-card');
+    const willOpen = !card?.classList.contains('tooltip-open');
+    this.closeMetricTooltips();
+    if (willOpen && card) {
+      card.classList.add('tooltip-open');
+      button.setAttribute('aria-expanded', 'true');
+    }
+  }
+
+  private closeMetricTooltips() {
+    this.shadowRoot?.querySelectorAll('.metric-card.tooltip-open').forEach(card => card.classList.remove('tooltip-open'));
+    this.shadowRoot?.querySelectorAll('[data-tooltip-toggle]').forEach(button => button.setAttribute('aria-expanded', 'false'));
+  }
+
+  private closeTooltipFromOutside = (event: PointerEvent) => {
+    if (!(event.composedPath() as EventTarget[]).includes(this)) this.closeMetricTooltips();
+  };
+
+  private closeTooltipInside = (event: Event) => {
+    const target = event.composedPath()[0] as Element | undefined;
+    if (!target?.closest?.('.metric-card')) this.closeMetricTooltips();
+  };
+
+  private closeTooltipFromKeyboard = (event: KeyboardEvent) => {
+    if (event.key === 'Escape') this.closeMetricTooltips();
+  };
+
+  private renderSuiteInsight() {
+    const percent = this.passed.size / 5 * 100;
+    const ring = this.shadowRoot?.querySelector('#suite-ring') as HTMLElement | null;
+    ring?.style.setProperty('--score', `${percent / 100 * 360}deg`);
+    this.text('#suite-percent', `${Math.round(percent)}%`);
+    this.text('#suite-tooltip-score', `${this.passed.size} of 5`);
+    this.shadowRoot?.querySelectorAll('[data-coverage]').forEach(item => {
+      item.classList.toggle('covered', this.passed.has(item.getAttribute('data-coverage') as TestName));
+    });
+  }
+
+  private renderSparkline(selector: string, values: number[]) {
+    const line = this.shadowRoot?.querySelector(selector);
+    if (!line || !values.length) return;
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const range = Math.max(1, max - min);
+    const points = values.length === 1
+      ? `138,36 142,36`
+      : values.map((value, index) => {
+          const x = index / (values.length - 1) * 280;
+          const y = 62 - (value - min) / range * 50;
+          return `${x.toFixed(1)},${y.toFixed(1)}`;
+        }).join(' ');
+    line.setAttribute('points', points);
+  }
+
+  private renderHistogram(values: number[]) {
+    const bars = Array.from(this.shadowRoot?.querySelectorAll('#latency-histogram i') || []) as HTMLElement[];
+    if (!bars.length || !values.length) return;
+    const min = values[0];
+    const max = values[values.length - 1];
+    const width = Math.max(.001, max - min);
+    const buckets = new Array(bars.length).fill(0);
+    for (const value of values) {
+      const index = Math.min(bars.length - 1, Math.floor((value - min) / width * bars.length));
+      buckets[index]++;
+    }
+    const peak = Math.max(...buckets, 1);
+    bars.forEach((bar, index) => {
+      bar.style.height = `${Math.max(4, buckets[index] / peak * 100)}%`;
+      bar.classList.toggle('tail', index >= Math.floor(bars.length * .75));
+      bar.title = `${buckets[index]} response${buckets[index] === 1 ? '' : 's'}`;
+    });
+  }
+
+  private setState(name: TestName, state: 'RUNNING' | 'PASSED' | 'FAILED', detail?: string) {
+    const card = this.shadowRoot?.querySelector(`[data-test="${name}"]`);
+    if (!card) return;
+    card.setAttribute('data-state', state.toLowerCase());
+    const status = card.querySelector('.test-status');
+    if (status) status.textContent = state;
+    const result = card.querySelector(`#${name}-result`);
+    if (result && detail) result.textContent = detail;
+    const button = card.querySelector('.run-test') as HTMLButtonElement | null;
+    if (button) button.disabled = state === 'RUNNING';
+  }
+
+  private log(label: string, message: string) {
+    const list = this.shadowRoot?.querySelector('#activity-log');
+    if (!list) return;
+    const item = document.createElement('li');
+    const time = document.createElement('time');
+    const text = document.createElement('span');
+    time.textContent = label;
+    text.textContent = message;
+    item.append(time, text);
+    list.prepend(item);
+    while (list.children.length > 30) list.lastElementChild?.remove();
+  }
+
+  private clearLog = () => {
+    const list = this.shadowRoot?.querySelector('#activity-log');
+    if (list) list.textContent = '';
+    this.log('CLEAR', 'Console cleared.');
+  };
+
+  private text(selector: string, value: string) {
+    const element = this.shadowRoot?.querySelector(selector);
+    if (element) element.textContent = value;
+  }
+
+  private errorMessage(error: unknown) {
+    return error instanceof Error ? error.message : String(error);
+  }
+}
+</script>
+
+<style>
+:host {
+  display: block;
+  min-height: 100vh;
+  color: #eef2ed;
+  background: #0a0c0b;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+* { box-sizing: border-box; }
+button, input, select { font: inherit; }
+button, a { -webkit-tap-highlight-color: transparent; }
+.lab { min-height: 100vh; overflow: hidden; background:
+  radial-gradient(circle at 82% 8%, rgba(186, 255, 77, .10), transparent 26rem),
+  linear-gradient(rgba(255,255,255,.018) 1px, transparent 1px),
+  linear-gradient(90deg, rgba(255,255,255,.018) 1px, transparent 1px),
+  #0a0c0b; background-size: auto, 42px 42px, 42px 42px, auto; }
+.topbar { height: 72px; padding: 0 clamp(22px, 5vw, 76px); display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #252925; background: rgba(10,12,11,.76); backdrop-filter: blur(20px); }
+.brand { display: flex; align-items: center; gap: 12px; color: #f5f7f3; text-decoration: none; font-size: 12px; font-weight: 850; letter-spacing: 2.4px; }
+.brand-mark { width: 31px; height: 31px; display: grid; place-items: center; color: #0a0c0b; border-radius: 3px; background: #c4ff4d; font-size: 17px; font-weight: 950; transform: rotate(-4deg); }
+.topbar-actions { display: flex; align-items: center; gap: 25px; }
+.connection { display: flex; align-items: center; gap: 8px; color: #8d978d; font-family: ui-monospace, monospace; font-size: 9px; letter-spacing: 1px; }
+.connection i { width: 7px; height: 7px; border-radius: 50%; background: #c4ff4d; box-shadow: 0 0 13px #c4ff4d; animation: pulse 1.8s infinite; }
+.back-link { color: #d7ddd4; text-decoration: none; font-size: 11px; border-bottom: 1px solid #687066; }
+.hero { max-width: 1260px; margin: 0 auto; padding: 102px clamp(22px, 5vw, 76px) 70px; position: relative; }
+.hero::after { content: 'PUB/SUB'; position: absolute; right: 1%; top: 45px; color: transparent; -webkit-text-stroke: 1px rgba(255,255,255,.06); font-size: clamp(68px, 12vw, 170px); font-weight: 950; letter-spacing: -9px; pointer-events: none; }
+.eyebrow { display: flex; align-items: center; gap: 11px; color: #a6afa4; font-family: ui-monospace, monospace; font-size: 10px; letter-spacing: 1.7px; }
+.eyebrow i { width: 35px; height: 1px; background: #c4ff4d; }
+h1 { max-width: 800px; margin: 24px 0 23px; position: relative; z-index: 1; font-size: clamp(58px, 9vw, 122px); line-height: .82; letter-spacing: -7px; }
+h1 em { color: #c4ff4d; font-family: Georgia, serif; font-weight: 400; }
+.hero-copy { max-width: 610px; color: #919a91; font-size: 16px; line-height: 1.7; }
+.hero-actions { margin-top: 36px; display: flex; align-items: center; gap: 18px; }
+.primary-action { min-width: 198px; padding: 15px 19px; display: flex; justify-content: space-between; color: #10130e; border: 0; border-radius: 2px; background: #c4ff4d; cursor: pointer; font-size: 11px; font-weight: 850; text-transform: uppercase; letter-spacing: .6px; }
+.primary-action:disabled { opacity: .55; cursor: wait; }
+.load-profile { display: flex; align-items: center; gap: 8px; color: #777f78; font-size: 9px; font-weight: 800; letter-spacing: 1.3px; }
+.load-profile select { padding: 12px 28px 12px 12px; color: #e3e8df; border: 1px solid #323832; border-radius: 2px; background: #111411; }
+.scoreboard { max-width: 1260px; margin: 0 auto; display: grid; grid-template-columns: repeat(4, 1fr); border: 1px solid #2a2f2a; border-width: 1px 0; }
+.scoreboard > article { min-height: 145px; padding: 28px clamp(20px, 3vw, 38px); position: relative; border-right: 1px solid #2a2f2a; background: rgba(15,18,15,.74); transition: background .2s, border-color .2s; }
+.scoreboard > article:hover, .scoreboard > article.tooltip-open { z-index: 20; border-color: #53623d; background: #131712; }
+.scoreboard > article:last-child { border-right: 0; }
+.metric-info { width: 100%; padding: 0; display: flex; align-items: center; justify-content: space-between; color: #747d75; border: 0; background: transparent; cursor: help; font-family: ui-monospace, monospace; font-size: 9px; font-weight: 750; letter-spacing: 1.6px; text-align: left; }
+.metric-info span, .section-kicker { display: block; color: #747d75; font-family: ui-monospace, monospace; font-size: 9px; font-weight: 750; letter-spacing: 1.6px; }
+.metric-info i { width: 17px; height: 17px; display: grid; place-items: center; color: #8d978a; border: 1px solid #3b4339; border-radius: 50%; font-family: Georgia, serif; font-size: 10px; font-style: italic; transition: color .2s, border-color .2s, transform .2s; }
+.metric-card:hover .metric-info i, .metric-card.tooltip-open .metric-info i { color: #c4ff4d; border-color: #71884a; transform: rotate(8deg); }
+.scoreboard > article > strong { display: block; margin: 13px 0 4px; color: #f2f5ef; font-size: clamp(27px, 3vw, 42px); letter-spacing: -2px; }
+.scoreboard > article > small { color: #656d66; font-size: 10px; }
+.metric-tooltip { width: min(390px, calc(100vw - 32px)); padding: 22px; position: absolute; left: 18px; top: calc(100% - 8px); z-index: 30; visibility: hidden; opacity: 0; color: #aeb7ad; border: 1px solid #3e4939; background: rgba(9,12,9,.98); box-shadow: 0 28px 80px rgba(0,0,0,.65), inset 0 1px rgba(255,255,255,.035); backdrop-filter: blur(20px); transform: translateY(8px); transition: opacity .18s, transform .18s, visibility .18s; pointer-events: none; }
+.metric-tooltip::before { content: ''; width: 9px; height: 9px; position: absolute; left: 25px; top: -6px; border: 1px solid #3e4939; border-width: 1px 0 0 1px; background: #090c09; transform: rotate(45deg); }
+.metric-tooltip.align-right { left: auto; right: 18px; }
+.metric-tooltip.align-right::before { left: auto; right: 25px; }
+.metric-card:nth-child(2) .metric-tooltip { left: -35px; }
+.metric-card:hover .metric-tooltip, .metric-card.tooltip-open .metric-tooltip { visibility: visible; opacity: 1; transform: translateY(0); pointer-events: auto; }
+.tooltip-top { padding-bottom: 12px; display: flex; justify-content: space-between; color: #697369; border-bottom: 1px solid #252c25; font-family: ui-monospace, monospace; font-size: 8px; letter-spacing: 1.3px; }
+.tooltip-top b { color: #9eaa9b; font-weight: 650; }
+.suite-visual { padding: 20px 0; display: flex; align-items: center; gap: 18px; }
+.suite-ring { width: 84px; height: 84px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 50%; background: conic-gradient(#c4ff4d var(--score), #222922 0); position: relative; }
+.suite-ring::before { content: ''; width: 66px; height: 66px; position: absolute; border-radius: 50%; background: #0b0e0b; }
+.suite-ring span { z-index: 1; color: #eff4ec; font-family: ui-monospace, monospace; font-size: 17px; font-weight: 800; }
+.suite-visual > div > strong { display: block; color: #f0f4ed; font-size: 23px; letter-spacing: -1px; }
+.suite-visual p { margin: 4px 0 0; color: #6f796f; font-size: 9px; line-height: 1.5; }
+.coverage-list { padding: 11px 0; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; border: 1px solid #252d25; border-width: 1px 0; }
+.coverage-list span { display: flex; align-items: center; gap: 7px; color: #687169; font-family: ui-monospace, monospace; font-size: 8px; }
+.coverage-list i { width: 6px; height: 6px; border: 1px solid #4a534a; border-radius: 50%; }
+.coverage-list .covered { color: #bac5b7; }.coverage-list .covered i { border-color: #c4ff4d; background: #c4ff4d; box-shadow: 0 0 7px rgba(196,255,77,.4); }
+.chart-value { padding: 18px 0 8px; display: flex; align-items: end; gap: 8px; }
+.chart-value strong { color: #f1f5ee; font-size: 29px; letter-spacing: -1.5px; }
+.chart-value span { padding-bottom: 5px; color: #6d776d; font-family: ui-monospace, monospace; font-size: 7px; letter-spacing: 1px; }
+.sparkline { width: 100%; height: 72px; display: block; overflow: visible; }
+.sparkline .grid-line { fill: none; stroke: #232a23; stroke-width: 1; }
+.sparkline polyline { fill: none; stroke: #c4ff4d; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; filter: drop-shadow(0 0 4px rgba(196,255,77,.35)); }
+.latency-sparkline polyline { stroke: #8edcff; filter: drop-shadow(0 0 4px rgba(142,220,255,.3)); }
+.chart-axis { margin-top: 5px; display: flex; justify-content: space-between; color: #596259; font-family: ui-monospace, monospace; font-size: 7px; letter-spacing: .8px; }
+.formula { margin-top: 15px; padding: 10px 8px; display: flex; align-items: center; justify-content: space-around; color: #9ba599; border: 1px solid #293029; background: #0f130f; font-family: ui-monospace, monospace; font-size: 8px; }
+.formula i { color: #c4ff4d; font-size: 14px; font-style: normal; }
+.histogram { height: 77px; padding-top: 8px; display: flex; align-items: end; gap: 4px; border-bottom: 1px solid #313a31; background: linear-gradient(transparent 49%, #202720 50%, transparent 51%); }
+.histogram i { min-height: 4px; flex: 1; border-radius: 1px 1px 0 0; background: #78964c; transition: height .35s ease; }
+.histogram i.tail { background: #c4ff4d; }
+.percentile-row { margin-top: 15px; display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid #293029; }
+.percentile-row span { padding: 8px; border-right: 1px solid #293029; }.percentile-row span:last-child { border: 0; }
+.percentile-row i { display: block; color: #626c62; font-family: ui-monospace, monospace; font-size: 7px; font-style: normal; }.percentile-row b { display: block; margin-top: 3px; color: #c5cec2; font-size: 10px; }
+.delivery-path { margin-top: 15px; display: flex; align-items: center; justify-content: space-between; color: #8c968b; font-family: ui-monospace, monospace; font-size: 7px; }
+.delivery-path i { height: 1px; flex: 1; margin: 0 5px; background: linear-gradient(90deg, #3d493a, #8edcff); position: relative; }.delivery-path i::after { content: ''; position: absolute; right: 0; top: -2px; border: 2px solid transparent; border-left-color: #8edcff; }
+.insight-copy { margin: 15px 0 0; color: #737d73; font-size: 9px; line-height: 1.65; }.insight-copy b { color: #b9c3b6; }
+.shared-demo { max-width: 1260px; margin: 72px auto 0; padding: 42px clamp(22px, 5vw, 60px); display: grid; grid-template-columns: 1.1fr .65fr 1fr; gap: 48px; align-items: center; border: 1px solid #30362e; background: linear-gradient(120deg, #151914, #10130f); box-shadow: 0 28px 90px rgba(0,0,0,.3); }
+.shared-demo h2, .section-heading h2 { margin: 8px 0 12px; font-family: Georgia, serif; font-size: 34px; font-weight: 400; letter-spacing: -1px; }
+.shared-demo > div > p:last-child, .section-heading > p { margin: 0; color: #7f8880; font-size: 12px; line-height: 1.65; }
+.shared-counter { display: grid; grid-template-columns: 40px 1fr 40px; gap: 9px; align-items: center; }
+.shared-counter button { width: 40px; height: 40px; color: #c4ff4d; border: 1px solid #3a4237; background: transparent; cursor: pointer; font-size: 20px; }
+.shared-counter output { color: #f2f6ee; font-family: ui-monospace, monospace; font-size: 46px; font-weight: 800; text-align: center; }
+.shared-counter small { grid-column: 1 / -1; color: #5f695f; font-family: ui-monospace, monospace; font-size: 8px; letter-spacing: 1.5px; text-align: center; }
+.shared-counter small b { color: #a9b2a8; }
+.message-form label { color: #707970; font-family: ui-monospace, monospace; font-size: 9px; letter-spacing: 1.3px; }
+.message-form > div { margin-top: 9px; display: flex; }
+.message-form input { width: 100%; min-width: 0; padding: 12px; color: #e4e9e1; outline: none; border: 1px solid #343a34; background: #090b09; font-size: 11px; }
+.message-form input:focus { border-color: #758d4d; }
+.message-form button { padding: 0 15px; color: #0b0e09; border: 0; background: #c4ff4d; cursor: pointer; font-size: 10px; font-weight: 800; }
+.message-form blockquote { margin: 14px 0 0; color: #9da79c; font-family: Georgia, serif; font-size: 15px; font-style: italic; }
+.test-section { max-width: 1260px; margin: 100px auto 0; padding: 0 clamp(22px, 5vw, 0px); }
+.section-heading { margin-bottom: 31px; display: flex; justify-content: space-between; align-items: end; }
+.section-heading > p { max-width: 430px; }
+.test-grid { display: grid; grid-template-columns: repeat(2, 1fr); border: 1px solid #292e29; }
+.test-card { min-height: 360px; padding: 34px; position: relative; border-right: 1px solid #292e29; border-bottom: 1px solid #292e29; background: rgba(14,17,14,.82); transition: border-color .2s, background .2s; }
+.test-card:nth-child(even) { border-right: 0; }
+.test-card.wide { grid-column: 1 / -1; border-bottom: 0; }
+.test-card.featured { background: linear-gradient(145deg, rgba(196,255,77,.08), rgba(14,17,14,.8) 56%); }
+.test-card[data-state="running"] { border-color: #788d50; }
+.test-card[data-state="passed"] { background: linear-gradient(145deg, rgba(94,187,98,.08), rgba(14,17,14,.86)); }
+.test-card[data-state="failed"] { background: linear-gradient(145deg, rgba(222,84,65,.09), rgba(14,17,14,.86)); }
+.test-number { color: #383e38; font-size: 62px; font-weight: 900; line-height: 1; letter-spacing: -5px; }
+.test-status { position: absolute; right: 30px; top: 34px; padding: 5px 8px; color: #777f77; border: 1px solid #343934; font-family: ui-monospace, monospace; font-size: 8px; letter-spacing: 1px; }
+[data-state="running"] .test-status { color: #d7e6b8; border-color: #6b7d4a; }
+[data-state="passed"] .test-status { color: #bff7b0; border-color: #477a43; }
+[data-state="failed"] .test-status { color: #ffb5a8; border-color: #894b42; }
+.test-card h3 { margin: 28px 0 10px; color: #e8ece5; font-family: Georgia, serif; font-size: 25px; font-weight: 400; }
+.test-card p { max-width: 515px; min-height: 55px; margin: 0; color: #768078; font-size: 12px; line-height: 1.6; }
+.test-card code { color: #b4cd80; font-family: ui-monospace, monospace; }
+.result { min-height: 20px; margin: 19px 0; color: #abb3aa; font-family: ui-monospace, monospace; font-size: 10px; }
+.run-test { padding: 0 0 5px; display: flex; gap: 18px; color: #c4ff4d; border: 0; border-bottom: 1px solid #4d5b3e; background: transparent; cursor: pointer; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .7px; }
+.run-test:disabled { color: #60685e; cursor: wait; }
+.console-section { max-width: 1260px; margin: 50px auto 0; border: 1px solid #2d332d; background: #080a08; }
+.console-head { height: 43px; padding: 0 14px; display: flex; align-items: center; gap: 13px; color: #747c74; border-bottom: 1px solid #252a25; background: #101310; font-family: ui-monospace, monospace; font-size: 9px; }
+.console-head > span { display: flex; gap: 5px; }
+.console-head i { width: 7px; height: 7px; border-radius: 50%; background: #363d36; }
+.console-head i:first-child { background: #d45d50; }.console-head i:nth-child(2) { background: #d3a54f; }.console-head i:last-child { background: #72b85f; }
+.console-head b { font-weight: 500; }
+.console-head button { margin-left: auto; padding: 4px 7px; color: #697169; border: 1px solid #303630; background: none; cursor: pointer; font-size: 8px; }
+#activity-log { height: 230px; margin: 0; padding: 14px 20px; overflow: auto; list-style: none; font-family: ui-monospace, monospace; font-size: 10px; }
+#activity-log li { padding: 6px 0; display: grid; grid-template-columns: 70px 1fr; color: #8d968c; border-bottom: 1px solid rgba(255,255,255,.025); }
+#activity-log time { color: #c4ff4d; }
+footer { max-width: 1260px; margin: 0 auto; padding: 34px 0 55px; display: flex; justify-content: space-between; color: #4f574f; font-family: ui-monospace, monospace; font-size: 8px; letter-spacing: 1.1px; }
+footer b { color: #687168; }
+@keyframes pulse { 50% { opacity: .35; box-shadow: 0 0 4px #c4ff4d; } }
+@media (max-width: 900px) {
+  .scoreboard { grid-template-columns: repeat(2, 1fr); }
+  .scoreboard article:nth-child(2) { border-right: 0; }
+  .scoreboard article:nth-child(-n+2) { border-bottom: 1px solid #2a2f2a; }
+  .metric-card:nth-child(odd) .metric-tooltip { left: 16px; right: auto; }
+  .metric-card:nth-child(even) .metric-tooltip { left: auto; right: 16px; }
+  .metric-card:nth-child(odd) .metric-tooltip::before { left: 25px; right: auto; }
+  .metric-card:nth-child(even) .metric-tooltip::before { left: auto; right: 25px; }
+  .shared-demo { margin-inline: 20px; grid-template-columns: 1fr 1fr; }
+  .message-form { grid-column: 1 / -1; }
+  .test-section, .console-section { margin-inline: 20px; }
+}
+@media (max-width: 620px) {
+  .topbar { height: 61px; }.connection { display: none; }
+  .hero { padding-top: 68px; }.hero::after { display: none; }
+  h1 { font-size: 58px; letter-spacing: -4px; }
+  .hero-actions, .section-heading { align-items: stretch; flex-direction: column; }
+  .scoreboard { grid-template-columns: 1fr 1fr; }
+  .scoreboard article { min-height: 120px; padding: 22px 18px; }
+  .shared-demo { padding: 30px 22px; grid-template-columns: 1fr; }
+  .message-form { grid-column: auto; }
+  .test-grid { grid-template-columns: 1fr; }
+  .test-card, .test-card:nth-child(even) { min-height: 340px; border-right: 0; border-bottom: 1px solid #292e29; }
+  .test-card.wide { grid-column: auto; }
+  footer { padding-inline: 20px; flex-direction: column; gap: 8px; }
+}
+@media (prefers-reduced-motion: reduce) { .connection i { animation: none; } }
+</style>
+
+<route path="/testing" methods="GET" />

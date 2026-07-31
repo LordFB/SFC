@@ -7,3 +7,6 @@ docs
 tools
 shop.db-wal
 shop.db-shm
+realtime.db
+realtime.db-wal
+realtime.db-shm
