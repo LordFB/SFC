@@ -115,7 +115,7 @@ export function createShopApi({
     }));
   }
 
-  function issueSession(req, res, timestamp) {
+  async function issueSession(req, res, timestamp) {
     const address = req.socket.remoteAddress || 'unknown';
     const previous = sessionIssueLimits.get(address);
     const entry = previous && timestamp - previous.startedAt < SESSION_ISSUE_WINDOW
@@ -127,14 +127,14 @@ export function createShopApi({
       error.status = 429;
       throw error;
     }
-    if (++issuedSessions % 100 === 0) shopDb.cleanupSecurityState(timestamp);
+    if (++issuedSessions % 100 === 0) await shopDb.cleanupSecurityState(timestamp);
     if (sessionIssueLimits.size > 10_000) {
       for (const [key, value] of sessionIssueLimits) {
         if (timestamp - value.startedAt >= SESSION_ISSUE_WINDOW) sessionIssueLimits.delete(key);
       }
     }
     const token = base64url();
-    const session = shopDb.createSession({
+    const session = await shopDb.createSession({
       tokenHash: tokenHash(token),
       csrfToken: base64url(),
       now: timestamp,
@@ -144,19 +144,19 @@ export function createShopApi({
     return session;
   }
 
-  function rotateSession(res, session, timestamp) {
+  async function rotateSession(res, session, timestamp) {
     const token = base64url();
-    const rotated = shopDb.rotateSession(session.id, tokenHash(token), base64url(), timestamp);
+    const rotated = await shopDb.rotateSession(session.id, tokenHash(token), base64url(), timestamp);
     res.setHeader('Set-Cookie', cookie(token));
     return rotated;
   }
 
-  function resolveSession(req, res) {
+  async function resolveSession(req, res) {
     const timestamp = now();
     const token = parseCookies(req.headers.cookie)[cookieName];
-    let session = token ? shopDb.getSessionByTokenHash(tokenHash(token)) : null;
+    let session = token ? await shopDb.getSessionByTokenHash(tokenHash(token)) : null;
     if (!session || session.expires_at <= timestamp) {
-      if (session) shopDb.revokeSession(session.id, timestamp);
+      if (session) await shopDb.revokeSession(session.id, timestamp);
       return issueSession(req, res, timestamp);
     }
 
@@ -167,14 +167,14 @@ export function createShopApi({
       timestamp - session.auth_last_seen_at >= AUTH_IDLE_LIFETIME
     );
     if (authExpired) {
-      shopDb.clearSessionAuth(session.id, timestamp);
-      session = rotateSession(res, shopDb.getSessionById(session.id), timestamp);
+      await shopDb.clearSessionAuth(session.id, timestamp);
+      session = await rotateSession(res, await shopDb.getSessionById(session.id), timestamp);
     } else if (session.user_id) {
-      shopDb.touchAuthenticatedSession(session.id, timestamp);
+      await shopDb.touchAuthenticatedSession(session.id, timestamp);
       session.auth_last_seen_at = timestamp;
       session.last_seen_at = timestamp;
     } else {
-      shopDb.touchSession(session.id, timestamp);
+      await shopDb.touchSession(session.id, timestamp);
       session.last_seen_at = timestamp;
     }
     return session;
@@ -230,8 +230,8 @@ export function createShopApi({
     return tokenHash(`${purpose}|${req.socket.remoteAddress || 'unknown'}|${subject}`);
   }
 
-  function assertNotRateLimited(key) {
-    const row = shopDb.getRateLimit(key);
+  async function assertNotRateLimited(key) {
+    const row = await shopDb.getRateLimit(key);
     if (!row) return;
     const timestamp = now();
     if (row.blocked_until && row.blocked_until > timestamp) {
@@ -241,12 +241,12 @@ export function createShopApi({
     }
   }
 
-  function recordLoginFailure(key) {
+  async function recordLoginFailure(key) {
     const timestamp = now();
-    const row = shopDb.getRateLimit(key);
+    const row = await shopDb.getRateLimit(key);
     const inWindow = row && timestamp - row.window_started_at < LOGIN_WINDOW;
     const attempts = inWindow ? row.attempts + 1 : 1;
-    shopDb.saveRateLimit({
+    await shopDb.saveRateLimit({
       key,
       windowStartedAt: inWindow ? row.window_started_at : timestamp,
       attempts,
@@ -275,9 +275,9 @@ export function createShopApi({
       throw error;
     }
     const registrationKey = rateKey(req, 'account-creation', 'register');
-    assertNotRateLimited(registrationKey);
-    recordLoginFailure(registrationKey);
-    if (shopDb.getUserByEmail(email)) {
+    await assertNotRateLimited(registrationKey);
+    await recordLoginFailure(registrationKey);
+    if (await shopDb.getUserByEmail(email)) {
       const error = new Error('Account unavailable');
       error.status = 409;
       throw error;
@@ -285,16 +285,16 @@ export function createShopApi({
     const passwordHash = await argon2.hash(body.password, ARGON2_OPTIONS);
     let user;
     try {
-      user = shopDb.createUser({ email, passwordHash, now: now() });
+      user = await shopDb.createUser({ email, passwordHash, now: now() });
     } catch (error) {
-      if (String(error.code).startsWith('SQLITE_CONSTRAINT')) {
+      if (String(error.code).startsWith('SQLITE_CONSTRAINT') || error.code === '23505') {
         error.status = 409;
         error.message = 'Account unavailable';
       }
       throw error;
     }
-    shopDb.authenticateSession(session.id, user.id, now());
-    const rotated = rotateSession(res, shopDb.getSessionById(session.id), now());
+    await shopDb.authenticateSession(session.id, user.id, now());
+    const rotated = await rotateSession(res, await shopDb.getSessionById(session.id), now());
     auditSecurity('account.registered', req, { actor: user.id });
     return { user, session: rotated };
   }
@@ -303,26 +303,26 @@ export function createShopApi({
     const email = normalizeEmail(body.email);
     const password = typeof body.password === 'string' ? body.password : '';
     const key = rateKey(req, email || 'invalid');
-    assertNotRateLimited(key);
-    const user = email ? shopDb.getUserByEmail(email) : null;
+    await assertNotRateLimited(key);
+    const user = email ? await shopDb.getUserByEmail(email) : null;
     const verified = await verifyPassword(password, user?.password_hash);
     if (!user || !verified) {
-      recordLoginFailure(key);
+      await recordLoginFailure(key);
       auditSecurity('auth.login_failed', req);
       const error = new Error('Invalid email or password');
       error.status = 401;
       throw error;
     }
-    shopDb.clearRateLimit(key);
-    shopDb.authenticateSession(session.id, user.id, now());
+    await shopDb.clearRateLimit(key);
+    await shopDb.authenticateSession(session.id, user.id, now());
     auditSecurity('auth.login_succeeded', req, { actor: user.id });
-    return { user, session: rotateSession(res, shopDb.getSessionById(session.id), now()) };
+    return { user, session: await rotateSession(res, await shopDb.getSessionById(session.id), now()) };
   }
 
   async function dispatch(req, res, url, session, body) {
     const path = url.pathname;
     if (path === '/shop/api/auth/session' && req.method === 'GET') {
-      const user = session.user_id ? shopDb.getUserById(session.user_id) : null;
+      const user = session.user_id ? await shopDb.getUserById(session.user_id) : null;
       return writeJson(res, 200, {
         authenticated: Boolean(user),
         user: user ? { id: user.id, email: user.email } : null,
@@ -350,17 +350,17 @@ export function createShopApi({
     }
     if (path === '/shop/api/auth/reauth' && req.method === 'POST') {
       requireAuthenticated(session);
-      const user = shopDb.getUserById(session.user_id);
+      const user = await shopDb.getUserById(session.user_id);
       const key = rateKey(req, user.email);
-      assertNotRateLimited(key);
+      await assertNotRateLimited(key);
       if (!await verifyPassword(body.password, user.password_hash)) {
-        recordLoginFailure(key);
+        await recordLoginFailure(key);
         const error = new Error('Invalid password');
         error.status = 401;
         throw error;
       }
-      shopDb.clearRateLimit(key);
-      shopDb.markRecentAuth(session.id, now());
+      await shopDb.clearRateLimit(key);
+      await shopDb.markRecentAuth(session.id, now());
       return writeJson(res, 200, { verified: true });
     }
     if (path === '/shop/api/auth/password' && req.method === 'POST') {
@@ -369,42 +369,42 @@ export function createShopApi({
         return writeJson(res, 400, { error: 'Password must be between 12 and 128 characters' });
       }
       const passwordHash = await argon2.hash(body.password, ARGON2_OPTIONS);
-      shopDb.updatePasswordHash(session.user_id, passwordHash);
-      shopDb.revokeOtherUserSessions(session.user_id, session.id, now());
+      await shopDb.updatePasswordHash(session.user_id, passwordHash);
+      await shopDb.revokeOtherUserSessions(session.user_id, session.id, now());
       auditSecurity('auth.password_changed', req, { actor: session.user_id });
-      const rotated = rotateSession(res, session, now());
+      const rotated = await rotateSession(res, session, now());
       return writeJson(res, 200, { changed: true, csrfToken: rotated.csrf_token });
     }
     if (path === '/shop/api/auth/logout' && req.method === 'POST') {
-      shopDb.clearSessionAuth(session.id, now());
-      const rotated = rotateSession(res, shopDb.getSessionById(session.id), now());
+      await shopDb.clearSessionAuth(session.id, now());
+      const rotated = await rotateSession(res, await shopDb.getSessionById(session.id), now());
       return writeJson(res, 200, { authenticated: false, csrfToken: rotated.csrf_token });
     }
     if (path === '/shop/api/auth/logout-all' && req.method === 'POST') {
       requireAuthenticated(session);
-      shopDb.revokeOtherUserSessions(session.user_id, session.id, now());
+      await shopDb.revokeOtherUserSessions(session.user_id, session.id, now());
       auditSecurity('auth.logout_all', req, { actor: session.user_id });
-      shopDb.clearSessionAuth(session.id, now());
-      const rotated = rotateSession(res, shopDb.getSessionById(session.id), now());
+      await shopDb.clearSessionAuth(session.id, now());
+      const rotated = await rotateSession(res, await shopDb.getSessionById(session.id), now());
       return writeJson(res, 200, { authenticated: false, csrfToken: rotated.csrf_token });
     }
 
     if (path === '/shop/api/products' && req.method === 'POST') {
       switch (body.action) {
-        case 'list': return writeJson(res, 200, { products: shopDb.getAllProducts(), categories: shopDb.getCategories() });
-        case 'get': return writeJson(res, 200, { product: shopDb.getProductById(body.id) });
-        case 'search': return writeJson(res, 200, { products: shopDb.searchProducts(body.term || '') });
-        case 'category': return writeJson(res, 200, { products: shopDb.getProductsByCategory(body.category) });
+        case 'list': return writeJson(res, 200, { products: await shopDb.getAllProducts(), categories: await shopDb.getCategories() });
+        case 'get': return writeJson(res, 200, { product: await shopDb.getProductById(body.id) });
+        case 'search': return writeJson(res, 200, { products: await shopDb.searchProducts(body.term || '') });
+        case 'category': return writeJson(res, 200, { products: await shopDb.getProductsByCategory(body.category) });
         default: return writeJson(res, 400, { error: 'Invalid action' });
       }
     }
     if (path === '/shop/api/cart' && req.method === 'POST') {
       switch (body.action) {
-        case 'get': return writeJson(res, 200, shopDb.getCart(session.id));
-        case 'add': return writeJson(res, 200, shopDb.addToCart(session.id, body.productId, body.quantity ?? 1));
-        case 'update': return writeJson(res, 200, shopDb.updateCartQuantity(session.id, body.productId, body.quantity));
-        case 'remove': return writeJson(res, 200, shopDb.removeFromCart(session.id, body.productId));
-        case 'clear': return writeJson(res, 200, shopDb.clearCart(session.id));
+        case 'get': return writeJson(res, 200, await shopDb.getCart(session.id));
+        case 'add': return writeJson(res, 200, await shopDb.addToCart(session.id, body.productId, body.quantity ?? 1));
+        case 'update': return writeJson(res, 200, await shopDb.updateCartQuantity(session.id, body.productId, body.quantity));
+        case 'remove': return writeJson(res, 200, await shopDb.removeFromCart(session.id, body.productId));
+        case 'clear': return writeJson(res, 200, await shopDb.clearCart(session.id));
         default: return writeJson(res, 400, { error: 'Invalid action' });
       }
     }
@@ -418,7 +418,7 @@ export function createShopApi({
           if (!normalizedName || !normalizeEmail(email) || !normalizedAddress) {
             return writeJson(res, 400, { error: 'Valid name, email, and address are required' });
           }
-          const order = shopDb.createOrder(session.id, session.user_id, {
+          const order = await shopDb.createOrder(session.id, session.user_id, {
             name: normalizedName,
             email: normalizeEmail(email),
             address: normalizedAddress,
@@ -426,11 +426,11 @@ export function createShopApi({
           return writeJson(res, 200, { order });
         }
         case 'get': {
-          const order = shopDb.getOrderById(body.orderId, session.user_id);
+          const order = await shopDb.getOrderById(body.orderId, session.user_id);
           return order ? writeJson(res, 200, { order }) : writeJson(res, 404, { error: 'Order not found' });
         }
         case 'list':
-          return writeJson(res, 200, { orders: shopDb.getOrdersByUser(session.user_id) });
+          return writeJson(res, 200, { orders: await shopDb.getOrdersByUser(session.user_id) });
         default:
           return writeJson(res, 400, { error: 'Invalid action' });
       }
@@ -438,11 +438,11 @@ export function createShopApi({
     return writeJson(res, 404, { error: 'Not found' });
   }
 
-  function authenticatedSessionFor(req) {
+  async function authenticatedSessionFor(req) {
     const timestamp = now();
     const token = parseCookies(req.headers.cookie)[cookieName];
     if (!token) return null;
-    const session = shopDb.getSessionByTokenHash(tokenHash(token));
+    const session = await shopDb.getSessionByTokenHash(tokenHash(token));
     if (!session?.user_id || session.expires_at <= timestamp || !session.authenticated_at || !session.auth_last_seen_at) return null;
     if (timestamp - session.authenticated_at >= AUTH_ABSOLUTE_LIFETIME || timestamp - session.auth_last_seen_at >= AUTH_IDLE_LIFETIME) return null;
     return session;
@@ -451,7 +451,7 @@ export function createShopApi({
   const handleShopApi = async function handleShopApi(req, res) {
     const url = new URL(req.url, origin);
     try {
-      const session = resolveSession(req, res);
+      const session = await resolveSession(req, res);
       const body = req.method === 'GET' ? {} : await parseBody(req);
       await dispatch(req, res, url, session, body);
     } catch (error) {
@@ -463,8 +463,8 @@ export function createShopApi({
       });
     }
   };
-  handleShopApi.authorizeRealtime = (req, operation) => {
-    const session = authenticatedSessionFor(req);
+  handleShopApi.authorizeRealtime = async (req, operation) => {
+    const session = await authenticatedSessionFor(req);
     if (!session) {
       const error = new Error('Authentication required');
       error.status = 401;

@@ -15,7 +15,33 @@ import '../components/docs/Shell.sfc';
 import { routes } from 'virtual:routes';
 import { parseRouteParams } from './runtime/index';
 
-console.log('App started, routes:', routes);
+const demoOnlyPaths = new Set(['/playground', '/stress-testing', '/testing']);
+
+async function detectDemoServices(): Promise<boolean> {
+  // Vite replaces this in production; the standalone dev server intentionally
+  // leaves import.meta.env undefined.
+  if (!import.meta.env?.PROD) return true;
+
+  try {
+    const response = await fetch('/__sfc/capabilities', {
+      cache: 'no-store',
+      headers: { Accept: 'application/json' }
+    });
+    if (!response.ok || !response.headers.get('content-type')?.includes('application/json')) return false;
+    const capabilities = await response.json();
+    return capabilities?.demoServices === true;
+  } catch {
+    return false;
+  }
+}
+
+const demoServicesAvailable = await detectDemoServices();
+document.documentElement.dataset.sfcDemoServices = demoServicesAvailable ? 'available' : 'unavailable';
+const activeRoutes = demoServicesAvailable
+  ? routes
+  : routes.filter(route => !demoOnlyPaths.has(String(route.path)));
+
+console.log('App started, routes:', activeRoutes);
 
 // Component loading cache to track which modules have been loaded
 const loadedModules = new Map<string, boolean>();
@@ -88,7 +114,7 @@ async function navigateToRoute(fullPath: string, pushState = true) {
   try {
     // Find matching route (match against pathname only, not query string)
     let matchedRoute = null;
-    for (const route of routes) {
+    for (const route of activeRoutes) {
       if (route.handlerOnly) continue;
       const routePathNorm = route.path === '/' ? '/' : String(route.path).replace(/\/$/, '');
       const routeParams = parseRouteParams(routePathNorm, path, route.paramNames);
@@ -202,7 +228,7 @@ async function preloadRoute(path: string) {
   preloadCache.add(path);
   const normalize = (p: string) => { if (!p) return '/'; return p === '/' ? '/' : p.replace(/\/$/, ''); };
   path = normalize(path);
-  for (const route of routes) {
+  for (const route of activeRoutes) {
     if (route.handlerOnly) continue;
     const routePathNorm = route.path === '/' ? '/' : String(route.path).replace(/\/$/, '');
     const routeParams = parseRouteParams(routePathNorm, path, route.paramNames);

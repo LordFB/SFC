@@ -45,6 +45,9 @@ test('template directives bind component calls and instance hover styles without
 
 test('playground delegates SFC blocks to Monaco native language tokenizers', () => {
   const playground = readFileSync(new URL('../components/docs/Playground.sfc', import.meta.url), 'utf8');
+  const packageJson = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+
+  assert.equal(packageJson.dependencies['monaco-editor'], '0.52.2', 'the self-hosted AMD loader requires the last supported AMD release');
 
   for (const language of ['html', 'javascript', 'typescript', 'css', 'scss']) {
     assert.match(playground, new RegExp(`nextEmbedded:'${language}'`), `playground should embed Monaco ${language} highlighting`);

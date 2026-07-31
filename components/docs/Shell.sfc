@@ -8,14 +8,14 @@
         <a data-section="intermediate" href="/intermediate"><i>02</i><span>Intermediate<small>Backend introduction</small></span></a>
         <a data-section="advanced" href="/advanced"><i>03</i><span>Advanced<small>Full-stack patterns</small></span></a>
         <a data-section="internals" href="/internals"><i>04</i><span>Internals<small>Compiler & runtime</small></span></a>
-        <p>BUILD & PROVE</p>
-        <a data-section="playground" href="/playground"><i>05</i><span>Playground<small>Monaco + preview</small></span></a>
-        <a data-section="stress" href="/stress-testing"><i>06</i><span>Stress testing<small>Realtime gauntlet</small></span></a>
+        <p data-demo-only>BUILD & PROVE</p>
+        <a data-demo-only data-section="playground" href="/playground"><i>05</i><span>Playground<small>Monaco + preview</small></span></a>
+        <a data-demo-only data-section="stress" href="/stress-testing"><i>06</i><span>Stress testing<small>Realtime gauntlet</small></span></a>
       </nav>
       <div class="sidebar-foot"><i></i><span>NO VIRTUAL DOM<br><b>NATIVE BY DEFAULT</b></span></div>
     </aside>
     <div class="main">
-      <header><button id="menu" aria-label="Toggle documentation menu" aria-expanded="false"><i></i><i></i></button><span>SFC DOCUMENTATION</span><a href="/playground">OPEN PLAYGROUND <b>↗</b></a></header>
+      <header><button id="menu" aria-label="Toggle documentation menu" aria-expanded="false"><i></i><i></i></button><span>SFC DOCUMENTATION</span><a data-demo-only href="/playground">OPEN PLAYGROUND <b>↗</b></a></header>
       <div class="progress"><i id="progress"></i></div>
       <slot></slot>
     </div>
@@ -46,7 +46,14 @@ export default class extends HTMLElement {
     this.shadowRoot?.querySelector('#menu')?.setAttribute('aria-expanded', 'false');
     this.onScroll();
   }
+  private syncDemoAvailability() {
+    const available = document.documentElement.dataset.sfcDemoServices === 'available';
+    this.shadowRoot?.querySelectorAll('[data-demo-only]').forEach(element => {
+      (element as HTMLElement).hidden = !available;
+    });
+  }
   connectedCallback() {
+    this.syncDemoAvailability();
     this.syncSection();
     this.shadowRoot?.querySelector('#menu')?.addEventListener('click', this.onMenu);
     window.addEventListener('scroll', this.onScroll, { passive: true });

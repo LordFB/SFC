@@ -133,6 +133,17 @@ async function handle(req, res) {
   const url = new URL(req.url, `http://localhost:${PORT}`);
   const urlPath = url.pathname;
 
+  if (urlPath === '/__sfc/capabilities' && (req.method === 'GET' || req.method === 'HEAD')) {
+    const body = Buffer.from(JSON.stringify({ demoServices: DEMO_SERVICES_ENABLED }));
+    res.writeHead(200, {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Content-Length': body.length,
+      'Cache-Control': 'no-store',
+    });
+    res.end(req.method === 'HEAD' ? undefined : body);
+    return;
+  }
+
   if (!DEMO_SERVICES_ENABLED && (urlPath.startsWith('/__sfc/realtime') || urlPath.startsWith('/shop/api/'))) {
     res.writeHead(404, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
     res.end(JSON.stringify({ error: 'Not found' }));

@@ -7,10 +7,10 @@ import { shopDb } from './shop-db.js';
  * explicit prevents an unrelated `:id` route from accidentally being expanded
  * with IDs from the wrong table.
  */
-export function resolveShopPrerenderRoutes(route) {
+export async function resolveShopPrerenderRoutes(route) {
   switch (route.prerender) {
     case 'products':
-      return shopDb.getAllProducts().map(product => ({
+      return (await shopDb.getAllProducts()).map(product => ({
         params: { id: product.id },
         data: { product }
       }));

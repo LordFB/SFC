@@ -16,7 +16,7 @@
   "dependencies": {
     "argon2": "^0.44.0",
     "better-sqlite3": "^12.5.0",
-    "monaco-editor": "^0.53.0"
+    "monaco-editor": "0.52.2"
   },
   "devDependencies": {
     "@babel/generator": "^7.21.0",

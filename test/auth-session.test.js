@@ -71,25 +71,25 @@ function makeClient() {
   };
 }
 
-function sessionFor(client) {
+async function sessionFor(client) {
   return shopDb.getSessionByTokenHash(hash(tokenFromCookie(client.cookie)));
 }
 
-function createAuthenticatedClient(client, email) {
-  const user = shopDb.createUser({
+async function createAuthenticatedClient(client, email) {
+  const user = await shopDb.createUser({
     id: randomUUID(),
     email,
     passwordHash: testPasswordHash,
     now: clock,
   });
-  const session = sessionFor(client);
-  shopDb.authenticateSession(session.id, user.id, clock);
-  return { user, session: shopDb.getSessionById(session.id) };
+  const session = await sessionFor(client);
+  await shopDb.authenticateSession(session.id, user.id, clock);
+  return { user, session: await shopDb.getSessionById(session.id) };
 }
 
 test.after(async () => {
   await new Promise(resolve => server.close(resolve));
-  shopDb.close();
+  await shopDb.close();
   fs.rmSync(testDirectory, { recursive: true, force: true });
 });
 
@@ -103,8 +103,8 @@ test('issues an opaque hardened development cookie and stores only its hash', as
   assert.match(setCookie, /HttpOnly/);
   assert.match(setCookie, /SameSite=Strict/);
   assert.doesNotMatch(setCookie, /Secure/);
-  assert.ok(sessionFor(client));
-  assert.equal(JSON.stringify(sessionFor(client)).includes(tokenFromCookie(client.cookie)), false);
+  assert.ok(await sessionFor(client));
+  assert.equal(JSON.stringify(await sessionFor(client)).includes(tokenFromCookie(client.cookie)), false);
 });
 
 test('rejects missing origin and CSRF while ignoring attacker-supplied session IDs', async () => {
@@ -144,14 +144,14 @@ test('rejects missing origin and CSRF while ignoring attacker-supplied session I
 test('rotates the session token on logout and invalidates the prior token', async () => {
   const client = makeClient();
   await client.bootstrap();
-  createAuthenticatedClient(client, 'logout@example.test');
+  await createAuthenticatedClient(client, 'logout@example.test');
   const oldCookie = client.cookie;
   const oldToken = tokenFromCookie(oldCookie);
 
   const result = await client.request('/shop/api/auth/logout', { method: 'POST' });
   assert.equal(result.response.status, 200);
   assert.notEqual(tokenFromCookie(client.cookie), oldToken);
-  assert.equal(shopDb.getSessionByTokenHash(hash(oldToken)), undefined);
+  assert.equal(await shopDb.getSessionByTokenHash(hash(oldToken)), undefined);
 
   const replay = makeClient();
   replay.cookie = oldCookie;
@@ -163,8 +163,8 @@ test('rotates the session token on logout and invalidates the prior token', asyn
 test('expires strict authenticated authority but preserves the anonymous cart', async () => {
   const client = makeClient();
   await client.bootstrap();
-  const { session } = createAuthenticatedClient(client, 'expiry@example.test');
-  shopDb.addToCart(session.id, 2, 1);
+  const { session } = await createAuthenticatedClient(client, 'expiry@example.test');
+  await shopDb.addToCart(session.id, 2, 1);
 
   clock += securityConstants.AUTH_IDLE_LIFETIME + 1;
   const status = await client.request('/shop/api/auth/session');
@@ -180,9 +180,9 @@ test('expires strict authenticated authority but preserves the anonymous cart', 
 test('enforces per-user order ownership and hides unowned or foreign orders', async () => {
   const alice = makeClient();
   await alice.bootstrap();
-  const aliceAuth = createAuthenticatedClient(alice, 'alice@example.test');
-  shopDb.addToCart(aliceAuth.session.id, 3, 1);
-  const order = shopDb.createOrder(
+  const aliceAuth = await createAuthenticatedClient(alice, 'alice@example.test');
+  await shopDb.addToCart(aliceAuth.session.id, 3, 1);
+  const order = await shopDb.createOrder(
     aliceAuth.session.id,
     aliceAuth.user.id,
     { name: 'Alice', email: 'alice@example.test', address: 'Example street' },
@@ -190,7 +190,7 @@ test('enforces per-user order ownership and hides unowned or foreign orders', as
 
   const bob = makeClient();
   await bob.bootstrap();
-  createAuthenticatedClient(bob, 'bob@example.test');
+  await createAuthenticatedClient(bob, 'bob@example.test');
 
   const foreign = await bob.request('/shop/api/orders', {
     method: 'POST',
@@ -223,7 +223,7 @@ test('rejects unsafe cart quantities before they can affect totals or inventory'
 test('registers and logs in with Argon2id passwords while rejecting duplicates', async () => {
   const duplicate = makeClient();
   await duplicate.bootstrap();
-  createAuthenticatedClient(duplicate, 'claimed@example.test');
+  await createAuthenticatedClient(duplicate, 'claimed@example.test');
 
   const client = makeClient();
   await client.bootstrap();
@@ -250,7 +250,7 @@ test('registers and logs in with Argon2id passwords while rejecting duplicates',
     body: { email: 'fresh@example.test', password: testPassword },
   });
   assert.equal(result.response.status, 200);
-  const stored = shopDb.getUserByEmail('fresh@example.test');
+  const stored = await shopDb.getUserByEmail('fresh@example.test');
   assert.match(stored.password_hash, /^\$argon2id\$/);
   assert.equal(await argon2.verify(stored.password_hash, testPassword), true);
   assert.equal(JSON.stringify(stored).includes(testPassword), false);
@@ -291,8 +291,8 @@ test('requires recent authentication for password changes and revokes other sess
   const second = makeClient();
   await first.bootstrap();
   await second.bootstrap();
-  const { user } = createAuthenticatedClient(first, 'change@example.test');
-  shopDb.authenticateSession(sessionFor(second).id, user.id, clock);
+  const { user } = await createAuthenticatedClient(first, 'change@example.test');
+  await shopDb.authenticateSession((await sessionFor(second)).id, user.id, clock);
 
   clock += securityConstants.RECENT_AUTH_LIFETIME + 1;
   let result = await first.request('/shop/api/auth/password', {
