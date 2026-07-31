@@ -16,7 +16,7 @@ const STYLE_GLOBAL_RE = /<style([^>]*)>([\s\S]*?)<\/style>/gi;
 const LANG_RE = /lang\s*=\s*(?:"([^"]+)"|'([^']+)'|([^\s>]+))/i;
 const GLOBAL_ATTR_RE = /\bglobal(?:\s*=\s*(?:"true"|'true'|true))?\b/i;
 const EXPORT_DEFAULT_CLASS_RE = /export\s+default\s+class/;
-const METHOD_DECORATOR_RE = /@([A-Za-z_$][\w$]*)\s*(?:\s*\(\s*(?:(['\"])([^\2]*?)\2\s*)?\)\s*)?\s*([A-Za-z_$][\w$]*)\s*\(/g;
+const METHOD_DECORATOR_RE = /^[ \t]*@([A-Za-z_$][\w$]*)\s*(?:\s*\(\s*(?:(['\"])([^\2]*?)\2\s*)?\)\s*)?\s*([A-Za-z_$][\w$]*)\s*\(/gm;
 
 // Memoization caches
 const tagScanCache = new Map<string, Record<string, string>>();
@@ -284,7 +284,7 @@ export async function transformSFC(code: string, id: string) {
     try {
       if (/export\s+default\s+class/.test(script)) {
         const assigns: string[] = [];
-        const methodRe = /@([A-Za-z_$][\w$]*)\s*(?:\s*\(\s*(?:(['\"])([^\2]*?)\2\s*)?\)\s*)?\s*([A-Za-z_$][\w$]*)\s*\(/g;
+        const methodRe = /^[ \t]*@([A-Za-z_$][\w$]*)\s*(?:\s*\(\s*(?:(['\"])([^\2]*?)\2\s*)?\)\s*)?\s*([A-Za-z_$][\w$]*)\s*\(/gm;
         let m: RegExpExecArray | null;
         while ((m = methodRe.exec(script)) !== null) {
           const dec = m[1];

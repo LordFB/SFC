@@ -356,11 +356,9 @@ export default function sfcPlugin(options: SfcPluginOptions = {}): Plugin {
         const scriptContent = m ? m[1] : '';
         // preprocess decorators (@click, @input, @change, @debounce, @throttle)
         function astPreprocessDecorators(src: string) {
-          // replace @decorator(args) occurrences with a comment marker for AST
-          const replaced = src.replace(/@([A-Za-z_$][\w$]*)(\s*\(([^)]*)\))?\s*/g, (m, name, _parens, args) => {
-            const enc = args ? encodeURIComponent(args) : '';
-            return `/*__sfc_decorator:${name}:${enc}*/`;
-          });
+          // Preserve strings and template literals verbatim. A global @-regex
+          // also rewrites template directives such as @Click and Monaco states.
+          const replaced = src;
 
           // Quick regex fallback for anonymous `export default class` with simple decorators
           // This covers the common case where a default exported anonymous class has method decorators like `@click('.btn') onClick(...) {}`
@@ -391,7 +389,7 @@ export default function sfcPlugin(options: SfcPluginOptions = {}): Plugin {
               // try parsing with decorators support first (for class decorators)
               let astWithDecorators: t.File | null = null;
               try {
-                astWithDecorators = parser.parse(src, { sourceType: 'module', plugins: ['typescript', ['decorators', { legacy: true }], 'classProperties'] }) as any;
+                astWithDecorators = parser.parse(src, { sourceType: 'module', plugins: ['typescript', 'decorators-legacy', 'classProperties'] }) as any;
               } catch (e) {
                 astWithDecorators = null;
               }
@@ -578,8 +576,9 @@ export default function sfcPlugin(options: SfcPluginOptions = {}): Plugin {
         }
 
         function simplePreprocess(src: string) {
-          // simple regex fallback: remove @decorator tokens (no args support)
-          return src.replace(/@([A-Za-z_$][\w$]*)(\s*\(([^)]*)\))?\s*/g, '');
+          // Preserve source when decorator parsing fails. The TypeScript
+          // compiler remains the final decorator-aware fallback.
+          return src;
         }
 
         let preprocessed = scriptContent || '';
@@ -603,7 +602,7 @@ export default function sfcPlugin(options: SfcPluginOptions = {}): Plugin {
             // simple scan of original scriptContent for @decorator('selector') on anonymous default class
             if (/export\s+default\s+class/.test(scriptContent || '')) {
               const assigns: string[] = [];
-              const methodRe = /@([A-Za-z_$][\w$]*)\s*(?:\s*\(\s*(?:(['\"])([^\2]*?)\2\s*)?\)\s*)?\s*([A-Za-z_$][\w$]*)\s*\(/g;
+              const methodRe = /^[ \t]*@([A-Za-z_$][\w$]*)\s*(?:\s*\(\s*(?:(['\"])([^\2]*?)\2\s*)?\)\s*)?\s*([A-Za-z_$][\w$]*)\s*\(/gm;
               let mm: RegExpExecArray | null;
               while ((mm = methodRe.exec(scriptContent || '')) !== null) {
                 const dec = mm[1];
@@ -636,7 +635,7 @@ export default function sfcPlugin(options: SfcPluginOptions = {}): Plugin {
             try {
               if (/export\s+default\s+class/.test(scriptContent || '')) {
                 const assigns: string[] = [];
-                const methodRe = /@([A-Za-z_$][\w$]*)\s*(?:\s*\(\s*(?:(['\"])\3([^\2]*?)\2\s*)?\)\s*)?\s*([A-Za-z_$][\w$]*)\s*\(/g;
+                const methodRe = /^[ \t]*@([A-Za-z_$][\w$]*)\s*(?:\s*\(\s*(?:(['\"])\3([^\2]*?)\2\s*)?\)\s*)?\s*([A-Za-z_$][\w$]*)\s*\(/gm;
                 let mm: RegExpExecArray | null;
                 while ((mm = methodRe.exec(scriptContent || '')) !== null) {
                   const dec = mm[1];

@@ -107,7 +107,7 @@ export default class extends HTMLElement {
           [/./, 'invalid']
         ],
         template: [
-          [/<\/template\s*>/i, { token:'tag.sfc', next:'@'+'pop' }],
+          [/<\/template\s*>/i, { token:'tag.sfc', next:'@pop' }],
           [/<!--[\s\S]*?-->/, 'comment'],
           [/\{\{\s*[a-zA-Z_$][\w$]*\s*\}\}/, 'variable'],
           [/<\/?[a-z][\w-]*/i, 'tag'],
@@ -118,7 +118,7 @@ export default class extends HTMLElement {
           [/./, '']
         ],
         script: [
-          [/<\/script\s*>/i, { token:'tag.sfc', next:'@'+'pop' }],
+          [/<\/script\s*>/i, { token:'tag.sfc', next:'@pop' }],
           [/\/\/.*$/, 'comment'],
           [/\/\*[\s\S]*?\*\//, 'comment'],
           [/`(?:\\.|[^`])*`/, 'string'],
@@ -127,14 +127,14 @@ export default class extends HTMLElement {
           [/\b(?:string|number|boolean|unknown|any|void|HTMLElement|Element|EventListener)\b/, 'type'],
           [/\b(?:0[xX][\da-fA-F]+|\d+(?:\.\d+)?)\b/, 'number'],
           [/[a-zA-Z_$][\w$]*/, 'identifier'],
-          [/[{}[\]()]/, 'delimiter.bracket'],
+          [/[{}[\]()]/, '@brackets'],
           [/[;,.]/, 'delimiter'],
           [/[=><!~?:&|+\-*\/%^]+/, 'operator'],
           [/\s+/, 'white'],
           [/./, '']
         ],
         style: [
-          [/<\/style\s*>/i, { token:'tag.sfc', next:'@'+'pop' }],
+          [/<\/style\s*>/i, { token:'tag.sfc', next:'@pop' }],
           [/\/\*[\s\S]*?\*\//, 'comment'],
           [/@[\w-]+/, 'keyword'],
           [/--[\w-]+/, 'variable'],
@@ -143,13 +143,13 @@ export default class extends HTMLElement {
           [/"[^"]*"|'[^']*'/, 'string'],
           [/[a-zA-Z-]+(?=\s*:)/, 'attribute.name'],
           [/[.#]?[a-zA-Z_][\w-]*/, 'tag'],
-          [/[{}()]/, 'delimiter.bracket'],
+          [/[{}()]/, '@brackets'],
           [/[,:;]/, 'delimiter'],
           [/\s+/, 'white'],
           [/./, '']
         ],
         route: [
-          [/<\/route\s*>/i, { token:'tag.sfc', next:'@'+'pop' }],
+          [/<\/route\s*>/i, { token:'tag.sfc', next:'@pop' }],
           [/[a-zA-Z_:][\w:.-]*(?=\s*=)/, 'attribute.name'],
           [/"[^"]*"|'[^']*'/, 'string'],
           [/\s+/, 'white'],

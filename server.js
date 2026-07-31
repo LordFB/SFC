@@ -19,7 +19,7 @@ import { fileURLToPath, pathToFileURL } from 'url';
 import zlib from 'zlib';
 import { createHash } from 'crypto';
 import { createShopApi } from './shop-api.js';
-import { createRealtimeService } from './realtime-db.js';
+import { createRealtimeService, createPublicDemoRealtimeAuthorizer } from './realtime-db.js';
 import { extractComponentTag } from './src/sfc-metadata.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -71,7 +71,9 @@ const PROD_MODE = args.includes('--prod');
 const DEV_HOST = process.env.DEV_HOST || '127.0.0.1';
 const shopApiHandler = createShopApi({ production: PROD_MODE, port: PORT });
 const realtimeService = createRealtimeService({
-  authorize: PROD_MODE ? shopApiHandler.authorizeRealtime : async () => ({ scope: 'loopback-documentation' }),
+  authorize: PROD_MODE
+    ? createPublicDemoRealtimeAuthorizer(shopApiHandler.authorizeRealtime)
+    : async () => ({ scope: 'loopback-documentation' }),
 });
 
 // MIME types for common file extensions
@@ -779,7 +781,7 @@ async function handleRequest(req, res) {
       content = Buffer.from(await transformTypeScript(filePath, content.toString('utf8')), 'utf8');
     }
 
-    if (ext === '.html' && !PROD_MODE) {
+    if (ext === '.html' && !PROD_MODE && webPath !== '/playground-preview.html') {
       content = Buffer.from(injectLiveReload(content.toString('utf8')), 'utf8');
     }
     

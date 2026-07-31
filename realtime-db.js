@@ -10,6 +10,8 @@ const MAX_CLIENT_QUEUE_BYTES = 1024 * 1024;
 const MAX_CLIENTS = 1000;
 const MAX_CLIENTS_PER_SCOPE = 10;
 const POLL_INTERVAL_MS = 50;
+const PUBLIC_DEMO_PREFIXES = Object.freeze(['testing/showcase/', 'testing/benchmark/']);
+const PUBLIC_DEMO_SCOPE = 'public-testing-demos';
 
 export class RealtimeConflictError extends Error {
   constructor(current) {
@@ -36,6 +38,29 @@ function encodeEvent(event) {
 function scopedKey(scope, key) {
   const digest = createHash('sha256').update(String(scope)).digest('base64url');
   return `${digest}:${createHash('sha256').update(key).digest('base64url')}`;
+}
+
+export function createPublicDemoRealtimeAuthorizer(authorize) {
+  return async (req, operation, keys = []) => {
+    const demoOnly = keys.length > 0 && keys.every(key =>
+      PUBLIC_DEMO_PREFIXES.some(prefix => key.startsWith(prefix))
+    );
+    if (!demoOnly) return authorize?.(req, operation, keys);
+
+    if (operation === 'write') {
+      const origin = req.headers.origin;
+      let sameOrigin = false;
+      try {
+        sameOrigin = Boolean(origin) && new URL(origin).host === req.headers.host;
+      } catch {}
+      if (!sameOrigin) {
+        const error = new Error('Cross-origin demo writes are not allowed');
+        error.status = 403;
+        throw error;
+      }
+    }
+    return { scope: PUBLIC_DEMO_SCOPE };
+  };
 }
 
 async function readJson(req) {
@@ -353,13 +378,13 @@ export function createRealtimeService(options = {}) {
       }
 
       if ((req.method === 'PUT' || req.method === 'DELETE') && url.pathname === `${prefix}/value`) {
-        const authorization = await options.authorize?.(req, 'write');
+        const body = await readJson(req);
+        const key = validateKey(body.key);
+        const authorization = await options.authorize?.(req, 'write', [key]);
         if (!authorization?.scope) {
           sendJson(res, 401, { error: 'Authentication required' });
           return true;
         }
-        const body = await readJson(req);
-        const key = validateKey(body.key);
         responseKey = key;
         const expectedVersion = body.expectedVersion;
         if (expectedVersion !== undefined && (!Number.isSafeInteger(expectedVersion) || expectedVersion < 0)) {

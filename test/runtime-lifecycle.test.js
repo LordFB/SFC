@@ -53,8 +53,7 @@ test('playground tokenizes SFC blocks without Monaco nested-language state', () 
   for (const state of ['template', 'script', 'style', 'route']) {
     assert.match(playground, new RegExp(`${state}: \\[`), `playground should define a ${state} tokenizer state`);
   }
-  assert.doesNotMatch(playground, /next:'@(template|script|style|route|pop)'/, 'Monaco state strings must survive the SFC decorator transform');
-  assert.match(playground, /token:'tag\.sfc', next:'@'\+'pop'/, 'closing SFC blocks should safely return to the root tokenizer');
+  assert.match(playground, /token:'tag\.sfc', next:'@pop'/, 'closing SFC blocks should safely return to the root tokenizer');
   assert.match(playground, /token:'tag\.sfc'/, 'SFC block boundaries should retain distinct highlighting');
 });
 
@@ -73,6 +72,16 @@ test('playground executes generated code only inside its dedicated CSP sandbox',
   assert.match(productionServer, /script-src 'self' blob:/, 'only the preview response should permit blob scripts');
   assert.match(productionServer, /Cross-Origin-Resource-Policy', 'cross-origin'/, 'the opaque-origin sandbox must be allowed to load its bootstrap');
   assert.match(developmentServer, /webPath === '\/playground-preview\.js'[\s\S]*Cross-Origin-Resource-Policy'[\s\S]*cross-origin/, 'the standalone server should expose the same sandbox bootstrap policy');
+  assert.match(developmentServer, /webPath !== '\/playground-preview\.html'/, 'the opaque-origin sandbox must not receive the live-reload EventSource');
   assert.match(developmentServer, /immutableAsset = PROD_MODE && \/\^\\\/assets/, 'only fingerprinted build assets should receive immutable caching');
   assert.doesNotMatch(developmentServer, /PROD_MODE \? 'public, max-age=31536000, immutable' : 'no-cache'/, 'JIT modules and HTML must remain revalidatable in production mode');
+});
+
+test('production decorator preprocessing preserves directives and @-prefixed strings', () => {
+  const plugin = readFileSync(new URL('../src/plugin.ts', import.meta.url), 'utf8');
+
+  assert.match(plugin, /plugins: \['typescript', 'decorators-legacy', 'classProperties'\]/, 'production scripts should use Babel legacy-decorator parsing');
+  assert.match(plugin, /const replaced = src;/, 'decorator preprocessing must preserve the original script text');
+  assert.match(plugin, /function simplePreprocess\(src: string\)[\s\S]*?return src;/, 'fallback preprocessing must fail closed without deleting @ syntax');
+  assert.doesNotMatch(plugin, /return src\.replace\(\/@\(\[A-Za-z_\$\]/, 'fallbacks must not globally strip @-prefixed content');
 });

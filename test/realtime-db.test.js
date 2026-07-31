@@ -7,7 +7,8 @@ import test from 'node:test';
 import {
   RealtimeConflictError,
   createRealtimeDatabase,
-  createRealtimeService
+  createRealtimeService,
+  createPublicDemoRealtimeAuthorizer
 } from '../realtime-db.js';
 
 const testDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'sfc-realtime-'));
@@ -209,6 +210,44 @@ test('rejects cross-origin writes and oversized subscription sets', async () => 
 test('denies realtime access without an authorization policy', async () => {
   const running = await startService(path.join(testDirectory, 'unauthorized.db'), { authorize: async () => null });
   try {
+    assert.equal((await read(running.url, 'private/key')).status, 401);
+    assert.equal((await write(running.url, 'private/key', 'value')).status, 401);
+  } finally {
+    await running.close();
+  }
+});
+
+test('allows testing demo namespaces without authentication but protects all other keys', async () => {
+  const running = await startService(path.join(testDirectory, 'showcase.db'), {
+    authorize: createPublicDemoRealtimeAuthorizer(async () => null),
+  });
+  try {
+    const publicWrite = await fetch(`${running.url}/__sfc/realtime/value`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', Origin: running.url },
+      body: JSON.stringify({ key: 'testing/showcase/counter', value: 7 }),
+    });
+    assert.equal(publicWrite.status, 200);
+    assert.equal((await read(running.url, 'testing/showcase/counter')).body.value.value, 7);
+
+    const benchmarkWrite = await fetch(`${running.url}/__sfc/realtime/value`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', Origin: running.url },
+      body: JSON.stringify({ key: 'testing/benchmark/latency', value: 12 }),
+    });
+    assert.equal(benchmarkWrite.status, 200);
+    assert.equal((await read(running.url, 'testing/benchmark/latency')).body.value.value, 12);
+
+    const crossOriginWrite = await fetch(`${running.url}/__sfc/realtime/value`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', Origin: 'https://attacker.invalid' },
+      body: JSON.stringify({ key: 'testing/showcase/counter', value: 8 }),
+    });
+    assert.equal(crossOriginWrite.status, 403);
+    const mixedSubscription = await fetch(
+      `${running.url}/__sfc/realtime/events?key=testing%2Fbenchmark%2Flatency&key=private%2Fkey`
+    );
+    assert.equal(mixedSubscription.status, 401);
     assert.equal((await read(running.url, 'private/key')).status, 401);
     assert.equal((await write(running.url, 'private/key', 'value')).status, 401);
   } finally {

@@ -28,11 +28,13 @@ const STATIC_DIR = path.join(__dirname, 'dist', 'public');
 let shopApiHandler = null;
 let realtimeService = null;
 if (DEMO_SERVICES_ENABLED) {
-  const [{ createShopApi }, { createRealtimeService }] = await Promise.all([
+  const [{ createShopApi }, { createRealtimeService, createPublicDemoRealtimeAuthorizer }] = await Promise.all([
     import('./shop-api.js'), import('./realtime-db.js'),
   ]);
   shopApiHandler = createShopApi({ production: !PREVIEW_MODE, port: PORT });
-  realtimeService = createRealtimeService({ authorize: shopApiHandler.authorizeRealtime });
+  realtimeService = createRealtimeService({
+    authorize: createPublicDemoRealtimeAuthorizer(shopApiHandler.authorizeRealtime),
+  });
 }
 const SECURITY_HEADERS = {
   'Content-Security-Policy': "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://picsum.photos; connect-src 'self'; font-src 'self' data:; worker-src 'self' blob:; frame-src 'self'",
