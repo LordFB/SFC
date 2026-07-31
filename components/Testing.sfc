@@ -397,6 +397,13 @@ export default class extends HTMLElement {
     await Promise.all(attempts.map(response => response.json()));
     const winners = statuses.filter(status => status === 200).length;
     const conflicts = statuses.filter(status => status === 409).length;
+    if (winners === 0 && conflicts === 32) {
+      const verifiedResponse = await fetch(`/__sfc/realtime/value?key=${encodeURIComponent(key)}`, { cache: 'no-store' });
+      const verified = await verifiedResponse.json();
+      if (verifiedResponse.ok && verified.value?.version === version + 1 && verified.value?.value?.token === token) {
+        return { detail: '1 atomic winner · 31 conflicts · dropped winner response recovered' };
+      }
+    }
     if (winners !== 1 || conflicts !== 31) {
       throw new Error(`Expected 1 winner / 31 conflicts, received ${winners} / ${conflicts}`);
     }
@@ -420,15 +427,26 @@ export default class extends HTMLElement {
     return { detail: `JSON verified at persistent revision ${readBody.value.version}` };
   }
 
-  private write(key: string, value: unknown, expectedVersion?: number) {
-    const controller = new AbortController();
-    this.controllers.add(controller);
-    return fetch('/__sfc/realtime/value', {
-      method: 'PUT',
-      signal: controller.signal,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ key, value, ...(expectedVersion === undefined ? {} : { expectedVersion }) })
-    }).finally(() => this.controllers.delete(controller));
+  private async write(key: string, value: unknown, expectedVersion?: number) {
+    const body = JSON.stringify({ key, value, ...(expectedVersion === undefined ? {} : { expectedVersion }) });
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const controller = new AbortController();
+      this.controllers.add(controller);
+      try {
+        return await fetch('/__sfc/realtime/value', {
+          method: 'PUT',
+          signal: controller.signal,
+          headers: { 'Content-Type': 'application/json' },
+          body
+        });
+      } catch (error) {
+        if (!(error instanceof TypeError) || attempt === 1) throw error;
+        await new Promise(resolve => window.setTimeout(resolve, 25));
+      } finally {
+        this.controllers.delete(controller);
+      }
+    }
+    throw new Error('Realtime write failed after a transient connection reset');
   }
 
   private waitForSource(source: EventSource) {

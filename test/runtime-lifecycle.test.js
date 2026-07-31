@@ -41,6 +41,15 @@ test('public realtime demos bypass shop authentication in production', () => {
   assert.doesNotMatch(runtime, /shopAuth|auth\/session/, 'realtime must not depend on the removed shop authentication client');
 });
 
+test('browser benchmark tolerates one proxy connection reset without weakening CAS', () => {
+  const testing = readFileSync(new URL('../components/Testing.sfc', import.meta.url), 'utf8');
+
+  assert.match(testing, /for \(let attempt = 0; attempt < 2; attempt\+\+\)/, 'writes should retry one transient transport failure');
+  assert.match(testing, /error instanceof TypeError/, 'only browser transport failures should be retried');
+  assert.match(testing, /verified\.value\?\.version === version \+ 1/, 'an ambiguous CAS response must verify the committed version');
+  assert.match(testing, /verified\.value\?\.value\?\.token === token/, 'an ambiguous CAS response must verify ownership of the winning value');
+});
+
 test('template directives bind component calls and instance hover styles without evaluating code', () => {
   const runtime = readFileSync(new URL('../src/runtime/directives.ts', import.meta.url), 'utf8');
   const playground = readFileSync(new URL('../components/docs/Playground.sfc', import.meta.url), 'utf8');
