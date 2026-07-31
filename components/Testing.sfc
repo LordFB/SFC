@@ -171,6 +171,17 @@
 <script lang="ts">
 import { realtimeValue } from '/src/runtime/index.ts';
 
+const BURST_KEYS = [
+  'testing/benchmark/burst/0',
+  'testing/benchmark/burst/1',
+  'testing/benchmark/burst/2',
+  'testing/benchmark/burst/3',
+  'testing/benchmark/burst/4',
+  'testing/benchmark/burst/5',
+  'testing/benchmark/burst/6',
+  'testing/benchmark/burst/7',
+] as const;
+
 type TestName = 'reactive' | 'latency' | 'burst' | 'cas' | 'persistence';
 type TestResult = { detail: string; metric?: number };
 
@@ -354,7 +365,7 @@ export default class extends HTMLElement {
       32,
       async index => {
         const requestStarted = performance.now();
-        const response = await this.write('testing/benchmark/burst', { run, index });
+        const response = await this.write(BURST_KEYS[index % BURST_KEYS.length], { run, index });
         await response.json();
         timings.push(performance.now() - requestStarted);
         return response.status;

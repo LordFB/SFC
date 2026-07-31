@@ -1,6 +1,7 @@
 import { createHash } from 'crypto';
 import path from 'path';
 import { createConfiguredSqlAdapter } from './database/index.js';
+import { PUBLIC_DEMO_PREFIXES, PUBLIC_DEMO_SCOPE } from './realtime-config.js';
 
 const DEFAULT_PREFIX = '/__sfc/realtime';
 const MAX_KEY_LENGTH = 256;
@@ -10,12 +11,6 @@ const MAX_CLIENT_QUEUE_BYTES = 1024 * 1024;
 const MAX_CLIENTS = 1000;
 const MAX_CLIENTS_PER_SCOPE = 10;
 const POLL_INTERVAL_MS = 50;
-const PUBLIC_DEMO_PREFIXES = Object.freeze([
-  'docs/advanced/',
-  'testing/showcase/',
-  'testing/benchmark/',
-]);
-const PUBLIC_DEMO_SCOPE = 'public-testing-demos';
 
 export class RealtimeConflictError extends Error {
   constructor(current) {
@@ -39,7 +34,7 @@ function encodeEvent(event) {
   return `id: ${event.sequence}\nevent: value\ndata: ${JSON.stringify(event)}\n\n`;
 }
 
-function scopedKey(scope, key) {
+export function scopedRealtimeKey(scope, key) {
   const digest = createHash('sha256').update(String(scope)).digest('base64url');
   return `${digest}:${createHash('sha256').update(key).digest('base64url')}`;
 }
@@ -146,13 +141,40 @@ export function createRealtimeDatabase(options = {}) {
       throw error;
     }
     const adapter = await ready;
+    if (adapter.dialect === 'postgres') {
+      const updatedAt = Date.now();
+      const committed = decode(await adapter.get(`
+        WITH committed_value AS (
+          INSERT INTO sfc_realtime_values (key, value_json, version, updated_at, deleted)
+          SELECT $1, $2, 1, $3, $4
+          WHERE $5::bigint IS NULL OR $5::bigint = 0
+          ON CONFLICT(key) DO UPDATE SET
+            value_json = excluded.value_json,
+            version = sfc_realtime_values.version + 1,
+            updated_at = excluded.updated_at,
+            deleted = excluded.deleted
+          WHERE $5::bigint IS NULL OR sfc_realtime_values.version = $5::bigint
+          RETURNING key, value_json, version, updated_at, deleted
+        ), committed_event AS (
+          INSERT INTO sfc_realtime_events (key, value_json, version, updated_at, deleted)
+          SELECT key, value_json, version, updated_at, deleted FROM committed_value
+          RETURNING sequence, key, value_json, version, updated_at, deleted
+        )
+        SELECT sequence, key, value_json, version, updated_at, deleted FROM committed_event
+      `, [key, serialized, updatedAt, deleted ? 1 : 0, expectedVersion ?? null]));
+      if (committed) return committed;
+
+      const current = decode(await adapter.get(
+        'SELECT key, value_json, version, updated_at, deleted FROM sfc_realtime_values WHERE key = $1',
+        [key]
+      ));
+      throw new RealtimeConflictError(current);
+    }
+
     return adapter.transaction(async transaction => {
-      if (transaction.dialect === 'postgres') {
-        await transaction.get('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [key]);
-      }
       const currentRow = await transaction.get(
         `SELECT key, value_json, version, updated_at, deleted
-         FROM sfc_realtime_values WHERE key = $1${transaction.dialect === 'postgres' ? ' FOR UPDATE' : ''}`,
+         FROM sfc_realtime_values WHERE key = $1`,
         [key]
       );
       const current = decode(currentRow);
@@ -181,6 +203,20 @@ export function createRealtimeDatabase(options = {}) {
   };
 
   let writesSincePrune = 0;
+  let maintenance = Promise.resolve();
+
+  const scheduleEventPrune = sequence => {
+    maintenance = maintenance.then(async () => {
+      const adapter = await ready;
+      await adapter.execute(
+        'DELETE FROM sfc_realtime_events WHERE sequence < $1',
+        [Math.max(0, sequence - 100_000)]
+      );
+    }).catch(error => {
+      console.error('[sfc realtime] Event-log prune failed:', error.message);
+    });
+  };
+
   return {
     filename,
     async get(key) {
@@ -195,8 +231,7 @@ export function createRealtimeDatabase(options = {}) {
       const event = await commit(key, value, expectedVersion, false);
       if (++writesSincePrune >= 1000) {
         writesSincePrune = 0;
-        const adapter = await ready;
-        await adapter.execute('DELETE FROM sfc_realtime_events WHERE sequence < $1', [Math.max(0, event.sequence - 100_000)]);
+        scheduleEventPrune(event.sequence);
       }
       return event;
     },
@@ -214,7 +249,27 @@ export function createRealtimeDatabase(options = {}) {
       const adapter = await ready;
       return Number((await adapter.get('SELECT COALESCE(MAX(sequence), 0) AS sequence FROM sfc_realtime_events')).sequence);
     },
+    async pruneScope(scope, keys) {
+      const retainedKeys = [...new Set(keys)].map(validateKey).map(key => scopedRealtimeKey(scope, key));
+      const scopePrefix = `${createHash('sha256').update(String(scope)).digest('base64url')}:`;
+      const placeholders = retainedKeys.map((_, index) => `$${index + 3}`).join(', ');
+      const exclusion = retainedKeys.length ? ` AND key NOT IN (${placeholders})` : '';
+      const params = [scopePrefix, `${scopePrefix}~`, ...retainedKeys];
+      const adapter = await ready;
+      return adapter.transaction(async transaction => {
+        const events = await transaction.execute(
+          `DELETE FROM sfc_realtime_events WHERE key >= $1 AND key < $2${exclusion}`,
+          params
+        );
+        const values = await transaction.execute(
+          `DELETE FROM sfc_realtime_values WHERE key >= $1 AND key < $2${exclusion}`,
+          params
+        );
+        return { values: values.changes, events: events.changes };
+      });
+    },
     async close() {
+      await maintenance;
       const adapter = await adapterPromise;
       await adapter.close();
     }
@@ -341,7 +396,7 @@ export function createRealtimeService(options = {}) {
           sendJson(res, 429, { error: 'Too many realtime connections' });
           return true;
         }
-        const publicKeys = new Map(keys.map(key => [scopedKey(scope, key), key]));
+        const publicKeys = new Map(keys.map(key => [scopedRealtimeKey(scope, key), key]));
         res.writeHead(200, {
           'Content-Type': 'text/event-stream',
           'Cache-Control': 'no-cache, no-transform',
@@ -376,7 +431,7 @@ export function createRealtimeService(options = {}) {
           sendJson(res, 401, { error: 'Authentication required' });
           return true;
         }
-        const current = await database.get(scopedKey(authorization.scope, key));
+        const current = await database.get(scopedRealtimeKey(authorization.scope, key));
         sendJson(res, 200, { value: current ? { ...current, key } : null });
         return true;
       }
@@ -396,8 +451,8 @@ export function createRealtimeService(options = {}) {
           return true;
         }
         const event = req.method === 'DELETE'
-          ? await database.delete(scopedKey(authorization.scope, key), expectedVersion)
-          : await database.set(scopedKey(authorization.scope, key), body.value, expectedVersion);
+          ? await database.delete(scopedRealtimeKey(authorization.scope, key), expectedVersion)
+          : await database.set(scopedRealtimeKey(authorization.scope, key), body.value, expectedVersion);
         publish(event, true);
         sendJson(res, 200, { value: { ...event, key } });
         return true;

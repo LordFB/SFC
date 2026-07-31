@@ -87,10 +87,14 @@ the current URL.
 ## Realtime values
 
 `realtimeValue()` connects an SFC field to a persistent SQLite key. This
-showcase exposes only the `testing/showcase/*` and `testing/benchmark/*`
-namespaces in production. Mutations require an exact same-origin request;
-subscribers receive versioned updates and components unsubscribe during
-teardown.
+showcase exposes only the `docs/advanced/*`, `testing/showcase/*`, and
+`testing/benchmark/*` namespaces in production. Mutations require an exact
+same-origin request; subscribers receive versioned updates and components
+unsubscribe during teardown.
+
+Production builds scan executable component scripts for active public realtime
+keys, then remove obsolete values and event history from that public scope. Data
+owned by other authorization scopes is left untouched.
 
 ## Data adapters
 

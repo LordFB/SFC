@@ -907,6 +907,16 @@ export default function sfcPlugin(options: SfcPluginOptions = {}): Plugin {
 
       const concreteCount = generatedRoutes.filter(route => !route.skipped).length;
       console.log(`[sfc:prerender] Generated ${concreteCount} route blobs from ${routes.length} declarations`);
+    },
+
+    async writeBundle() {
+      const { cleanUnusedRealtimeValues } = await import('../realtime-build.js');
+      const result = await cleanUnusedRealtimeValues({
+        componentsDirectory: path.resolve(process.cwd(), 'components')
+      });
+      console.log(
+        `[sfc:realtime] Retained ${result.keys.length} active values; removed ${result.values} values and ${result.events} events`
+      );
     }
     };
   }

@@ -8,8 +8,10 @@ import {
   RealtimeConflictError,
   createRealtimeDatabase,
   createRealtimeService,
-  createPublicDemoRealtimeAuthorizer
+  createPublicDemoRealtimeAuthorizer,
+  scopedRealtimeKey
 } from '../realtime-db.js';
+import { PUBLIC_DEMO_SCOPE } from '../realtime-config.js';
 
 const testDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'sfc-realtime-'));
 
@@ -124,6 +126,87 @@ test('persists JSON values and enforces atomic compare-and-set versions', async 
   database = createRealtimeDatabase({ filename });
   assert.deepEqual((await database.get('room/status')).value, { online: true });
   assert.equal((await database.get('room/status')).version, 1);
+  await database.close();
+});
+
+test('commits PostgreSQL values and events in one database round trip', async () => {
+  const calls = [];
+  const adapter = {
+    dialect: 'postgres',
+    async query() { return []; },
+    async get(sql, params) {
+      calls.push({ sql, params });
+      return {
+        sequence: 12,
+        key: params[0],
+        value_json: params[1],
+        version: 4,
+        updated_at: params[2],
+        deleted: 0,
+      };
+    },
+    async execute() { return { changes: 0 }; },
+    async exec() {},
+    async transaction() { throw new Error('PostgreSQL fast path must not open a client transaction'); },
+    async close() {},
+  };
+  const database = createRealtimeDatabase({ adapter });
+  const committed = await database.set('fast/key', { ready: true }, 3);
+
+  assert.equal(calls.length, 1);
+  assert.match(calls[0].sql, /WITH committed_value AS/);
+  assert.match(calls[0].sql, /INSERT INTO sfc_realtime_events/);
+  assert.equal(committed.version, 4);
+  assert.equal(committed.sequence, 12);
+  assert.deepEqual(committed.value, { ready: true });
+  await database.close();
+});
+
+test('reads the current PostgreSQL value only after an atomic CAS miss', async () => {
+  const calls = [];
+  const adapter = {
+    dialect: 'postgres',
+    async query() { return []; },
+    async get(sql, params) {
+      calls.push(sql);
+      if (sql.includes('WITH committed_value AS')) return undefined;
+      return { key: params[0], value_json: '7', version: 5, updated_at: 1, deleted: 0 };
+    },
+    async execute() { return { changes: 0 }; },
+    async exec() {},
+    async transaction() { throw new Error('PostgreSQL fast path must not open a client transaction'); },
+    async close() {},
+  };
+  const database = createRealtimeDatabase({ adapter });
+
+  await assert.rejects(
+    database.set('fast/key', 8, 4),
+    error => error instanceof RealtimeConflictError && error.current.version === 5
+  );
+  assert.equal(calls.length, 2);
+  await database.close();
+});
+
+test('prunes obsolete realtime values and events only within the selected scope', async () => {
+  const filename = path.join(testDirectory, 'prune.db');
+  const database = createRealtimeDatabase({ filename });
+  const publicScope = createPublicDemoRealtimeAuthorizer(async () => null);
+  const request = { headers: { origin: 'http://localhost', host: 'localhost' } };
+  const authorization = await publicScope(request, 'write', ['testing/showcase/keep']);
+
+  // Exercise the same scoped storage representation used by the HTTP service.
+  const keep = scopedRealtimeKey(authorization.scope, 'testing/showcase/keep');
+  const stale = scopedRealtimeKey(authorization.scope, 'testing/showcase/stale');
+  const privateKey = scopedRealtimeKey('another-scope', 'testing/showcase/stale');
+  await database.set(keep, 1);
+  await database.set(stale, 2);
+  await database.set(privateKey, 3);
+
+  const removed = await database.pruneScope(PUBLIC_DEMO_SCOPE, ['testing/showcase/keep']);
+  assert.deepEqual(removed, { values: 1, events: 1 });
+  assert.equal((await database.get(keep)).value, 1);
+  assert.equal(await database.get(stale), null);
+  assert.equal((await database.get(privateKey)).value, 3);
   await database.close();
 });
 
