@@ -7,11 +7,15 @@
     "node": "^20.19.0 || >=22.12.0"
   },
   "scripts": {
+    "brand:icons": "node scripts/generate-brand-icons.mjs",
     "build": "node --import ./env-loader.js ./node_modules/vite/bin/vite.js build --config vite.config.build.ts",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck && npm test && npm run build && npm run verify:prerender",
     "test": "node --test test/*.test.js",
     "serve": "node --import ./env-loader.js server.prod.js",
     "serve:preview": "node --import ./env-loader.js server.prod.js --preview",
-    "serve:dev": "node --import ./env-loader.js server.js"
+    "serve:dev": "node --import ./env-loader.js server.js",
+    "verify:prerender": "node scripts/verify-prerender.mjs"
   },
   "dependencies": {
     "@netlify/database": "^1.1.0",

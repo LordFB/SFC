@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 246 64" role="img" aria-labelledby="title desc">
+  <title id="title">SFC Framework</title>
+  <desc id="desc">The SFC component-fold mark and wordmark.</desc>
+  <rect width="64" height="64" rx="14" fill="#0a0c0b"/>
+  <path fill="#c4ff4d" d="M17 12h34l-8 10H26l-5 5 5 5h13l9 9v5l-7 7H13l8-10h16l4-4-4-4H23l-9-9v-5z"/>
+  <rect x="45" y="10" width="8" height="8" rx="2" fill="#70e1d1"/>
+  <g fill="#edf2e9">
+    <path d="M85 18h29v8H94v7h17v8H94v7h20v8H85z"/>
+    <path d="M120 18h29v8h-20v8h17v8h-17v14h-9z"/>
+    <path d="M173 17c7 0 12 2 16 6l-6 7c-3-3-6-4-10-4-7 0-11 4-11 11s4 11 11 11c4 0 8-2 10-5l7 6c-4 5-10 8-17 8-13 0-21-8-21-20s8-20 21-20z"/>
+  </g>
+  <path fill="#657065" d="M85 61v-3h31v3zm38 0v-3h31v3zm38 0v-3h31v3zm38 0v-3h31v3z"/>
+</svg>

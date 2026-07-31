@@ -51,41 +51,47 @@ let currentRouteElement: HTMLElement | null = null;
 // Preload cache for hover intent
 const preloadCache = new Set<string>();
 
-const showcaseSections: Record<string, string> = {
-  '/basics': 'basics',
-  '/intermediate': 'intermediate',
-  '/advanced': 'advanced',
-  '/internals': 'internals',
-  '/playground': 'playground',
-  '/stress-testing': 'stress'
-};
-
-function prepareRouteMount(route: any, path: string): HTMLElement {
+function prepareRouteMount(route: any, _path: string): HTMLElement {
   const app = (document.querySelector('#app') || document.body) as HTMLElement;
-  const section = showcaseSections[path];
-  let shell = app.querySelector(':scope > sfc-doc-shell') as HTMLElement | null;
+  const layoutTag = typeof route.layout === 'string' ? route.layout : '';
+  const currentLayout = Array.from(app.children).find(element =>
+    element instanceof HTMLElement && element.hasAttribute('data-sfc-route-layout')
+  ) as HTMLElement | undefined;
 
-  if (!section) {
-    shell?.remove();
+  if (!layoutTag) {
+    currentLayout?.remove();
     return app;
   }
 
-  if (!shell) {
-    shell = document.createElement('sfc-doc-shell');
-    shell.setAttribute('section', section);
-    app.appendChild(shell);
+  let layout: HTMLElement;
+  if (currentLayout && currentLayout.localName === layoutTag) {
+    layout = currentLayout;
   } else {
-    shell.setAttribute('section', section);
+    currentLayout?.remove();
+    layout = document.createElement(layoutTag);
+    layout.setAttribute('data-sfc-route-layout', '');
+    app.appendChild(layout);
   }
 
-  // Built pages arrive with their generated route element directly in #app.
-  // Move it into the persistent shell before its module upgrades the element.
+  const previousAttributes: string[] = (layout as any).__sfcRouteLayoutAttributes || [];
+  for (const name of previousAttributes) layout.removeAttribute(name);
+  const nextAttributes: string[] = [];
+  for (const [name, value] of Object.entries(route)) {
+    if (!name.startsWith('layout-') || value === undefined || value === null) continue;
+    const attribute = name.slice('layout-'.length);
+    layout.setAttribute(attribute, String(value));
+    nextAttributes.push(attribute);
+  }
+  (layout as any).__sfcRouteLayoutAttributes = nextAttributes;
+
+  // Older built pages placed the generated route directly in #app. Adopt it
+  // into the declared layout before its module upgrades the element.
   if (route.tag) {
     const generated = app.querySelector(`:scope > ${route.tag}`);
-    if (generated && generated !== shell) shell.appendChild(generated);
+    if (generated && generated !== layout) layout.appendChild(generated);
   }
 
-  return shell;
+  return layout;
 }
 
 function eventAnchor(event: Event): HTMLAnchorElement | null {
@@ -293,7 +299,7 @@ navigateToRoute(initialPath, false);
 if (import.meta.hot) {
 	import.meta.hot.on && import.meta.hot.on('sfc:update', async (payload: any) => {
 		try {
-			const apply = (await import('/src/runtime/index')).defineComponent.__sfc_applyUpdate;
+			const apply = ((await import('./runtime/index')).defineComponent as any).__sfc_applyUpdate;
 			if (apply) apply(payload.file, { template: payload.template, css: payload.css });
 		} catch (e) {
 			// fallback: try global

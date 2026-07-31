@@ -49,4 +49,4 @@ const snippets = {
 };
 export default class extends HTMLElement { static tag='sfc-intermediate-page'; connectedCallback(){ this.querySelectorAll('[data-snippet]').forEach(n=>n.textContent=snippets[n.getAttribute('data-snippet')]); } }
 </script>
-<route path="/intermediate" methods="GET" />
+<route path="/intermediate" methods="GET" layout="sfc-doc-shell" layout-section="intermediate" />

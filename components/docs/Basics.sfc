@@ -21,7 +21,7 @@
       </section>
 
       <section class="doc-section" id="routing"><div class="doc-section-head"><span>01.4</span><div><h2>A route is metadata, not a component API</h2><p class="doc-lead">One route declaration makes a component lazy-loadable, navigable through the SPA router, refresh-safe, and eligible for static generation.</p></div></div>
-        <div class="doc-grid"><div class="doc-card"><span>STATIC</span><h3>/guides</h3><p>Build output gets an HTML shell and colocated route-data blob automatically.</p></div><div class="doc-card"><span>DYNAMIC</span><h3>/guide/:slug</h3><p>Declare a prerender source—or explicitly skip—to keep production builds honest.</p></div></div>
+        <div class="doc-grid"><div class="doc-card"><span>STATIC</span><h3>/guides</h3><p>Build output gets complete HTML, critical CSS, a route-chunk preload, and a colocated data blob.</p></div><div class="doc-card"><span>DYNAMIC</span><h3>/guide/:slug</h3><p>Declare a prerender source—or explicitly skip—to keep production builds honest.</p></div></div>
         <div class="doc-code"><div class="doc-code-head"><span>route declarations</span><b>BUILD-VALIDATED</b></div><pre><code data-snippet="routes"></code></pre></div>
       </section>
 
@@ -47,4 +47,4 @@ export default class extends HTMLElement {
   connectedCallback() { this.querySelectorAll('[data-snippet]').forEach(node => { node.textContent = snippets[node.getAttribute('data-snippet')]; }); }
 }
 </script>
-<route path="/basics" methods="GET" />
+<route path="/basics" methods="GET" layout="sfc-doc-shell" layout-section="basics" />

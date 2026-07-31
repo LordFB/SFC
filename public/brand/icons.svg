@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg">
+  <symbol id="sfc-mark" viewBox="0 0 64 64">
+    <rect width="64" height="64" rx="14" fill="#0a0c0b"/>
+    <path fill="#c4ff4d" d="M17 12h34l-8 10H26l-5 5 5 5h13l9 9v5l-7 7H13l8-10h16l4-4-4-4H23l-9-9v-5z"/>
+    <rect x="45" y="10" width="8" height="8" rx="2" fill="#70e1d1"/>
+  </symbol>
+  <symbol id="component" viewBox="0 0 24 24">
+    <path d="m9 5-6 7 6 7M15 5l6 7-6 7M14 3l-4 18"/>
+  </symbol>
+  <symbol id="route" viewBox="0 0 24 24">
+    <circle cx="5" cy="18" r="2"/><circle cx="19" cy="6" r="2"/><path d="M7 18h3a4 4 0 0 0 4-4v-4a4 4 0 0 1 4-4"/>
+  </symbol>
+  <symbol id="runtime" viewBox="0 0 24 24">
+    <path d="m13 2-8 12h7l-1 8 8-12h-7z"/>
+  </symbol>
+  <symbol id="database" viewBox="0 0 24 24">
+    <ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v7c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12v7c0 1.7 3.6 3 8 3s8-1.3 8-3v-7"/>
+  </symbol>
+  <symbol id="terminal" viewBox="0 0 24 24">
+    <rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3M13 15h4"/>
+  </symbol>
+  <symbol id="arrow-up-right" viewBox="0 0 24 24">
+    <path d="M7 17 17 7M8 7h9v9"/>
+  </symbol>
+</svg>

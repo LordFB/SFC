@@ -764,4 +764,4 @@ footer b { color: #687168; }
 }
 </style>
 
-<route path="/stress-testing" methods="GET" />
+<route path="/stress-testing" methods="GET" layout="sfc-doc-shell" layout-section="stress" />

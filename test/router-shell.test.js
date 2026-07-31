@@ -4,14 +4,16 @@ import test from 'node:test';
 
 const root = new URL('../', import.meta.url);
 
-test('showcase routes use one router-owned persistent shell', () => {
+test('route metadata drives one persistent layout without component nesting', () => {
   const main = readFileSync(new URL('src/main.ts', root), 'utf8');
-  assert.match(main, /const showcaseSections/);
+  assert.doesNotMatch(main, /const showcaseSections/, 'the router should not hardcode application routes');
+  assert.match(main, /typeof route\.layout === 'string'/);
+  assert.match(main, /data-sfc-route-layout/);
   assert.match(main, /prepareRouteMount\(matchedRoute, path\)/);
-  assert.match(main, /mountRoot\.matches\('sfc-doc-shell'\)/);
 
   for (const name of ['Basics', 'Intermediate', 'Advanced', 'Internals', 'Playground']) {
     const component = readFileSync(new URL(`components/docs/${name}.sfc`, root), 'utf8');
+    assert.match(component, /<route\b[^>]*layout="sfc-doc-shell"/, `${name} should declare its shared layout`);
     assert.doesNotMatch(component, /<sfc-doc-shell\b/, `${name} must render page content, not another shell`);
   }
 });

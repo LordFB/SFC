@@ -50,4 +50,4 @@ sfc-advanced-page .live-lab span, sfc-advanced-page .live-lab small { display: b
 sfc-advanced-page .live-lab strong { display: block; margin: 8px 0; color: #f0f4ed; font-size: 42px; }
 sfc-advanced-page .live-lab button { width: 52px; height: 52px; color: #c4ff4d; border: 1px solid #46533e; background: #0b0e0b; cursor: pointer; font-size: 22px; }
 </style>
-<route path="/advanced" methods="GET" />
+<route path="/advanced" methods="GET" layout="sfc-doc-shell" layout-section="advanced" />

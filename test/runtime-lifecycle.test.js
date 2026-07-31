@@ -9,10 +9,11 @@ test('class components receive a mounted and interpolated template before connec
   const wrapper = source.slice(wrapperStart, wrapperEnd);
 
   const mount = wrapper.indexOf('mountRoot.appendChild(frag)');
+  const adopt = wrapper.indexOf('if (!mountRoot.hasChildNodes())');
   const interpolate = wrapper.indexOf('interpolateTemplate(mountRoot');
   const userCallback = wrapper.indexOf('super.connectedCallback()');
 
-  assert.ok(mount >= 0, 'class wrapper should mount its compiled template');
+  assert.ok(adopt >= 0 && mount > adopt, 'class wrapper should adopt prerendered DOM before cloning a template');
   assert.ok(interpolate > mount, 'route interpolation should follow template mounting');
   assert.ok(userCallback > interpolate, 'user callback should run after the DOM is ready');
 });

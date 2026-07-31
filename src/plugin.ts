@@ -1,5 +1,5 @@
 import { Plugin, ViteDevServer } from 'vite';
-import { transformSFC, invalidateTagMapCache } from './transformer.ts';
+import { transformSFC, invalidateTagMapCache, resolveComponentPath } from './transformer.ts';
 import fs from 'fs';
 import path from 'path';
 import { debounce } from './utils/debounce.ts';
@@ -30,6 +30,15 @@ export interface SfcPluginOptions {
     | Promise<Array<{ params: Record<string, string | number>; data?: unknown }>>;
 }
 
+type DiscoveredRoute = Record<string, unknown> & {
+  path: string;
+  paramNames: string[];
+  tag?: string;
+  handlerOnly?: string;
+  component?: string;
+  filePath?: string;
+};
+
 export default function sfcPlugin(options: SfcPluginOptions = {}): Plugin {
   const {
     productionMode = false,
@@ -38,14 +47,15 @@ export default function sfcPlugin(options: SfcPluginOptions = {}): Plugin {
     resolvePrerenderRoutes
   } = options;
   const transformCache: TransformCache | null = persistCache ? getTransformCache() : null;
+  const sfcCache = new Map<string, { mtime: number; code: string }>();
   const virtualModuleId = 'virtual:routes';
   const resolvedVirtualId = '\0' + virtualModuleId;
 
-  function getRoutes() {
+  function getRoutes(): DiscoveredRoute[] {
     const componentsDir = path.resolve(process.cwd(), 'components');
-    const routes = [];
+    const routes: DiscoveredRoute[] = [];
 
-    function scan(dir, prefix = '') {
+    function scan(dir: string, prefix = ''): void {
       const files = fs.readdirSync(dir);
       for (const file of files) {
         const fullPath = path.join(dir, file);
@@ -83,7 +93,7 @@ export default function sfcPlugin(options: SfcPluginOptions = {}): Plugin {
                   paramNames.push(...matches.map(m => m.slice(1)));
                 }
               }
-              routes.push({ ...attrs, paramNames });
+              routes.push({ ...attrs, path: p, paramNames });
             } else {
               // extract tag from script
               const scriptMatch = content.match(/<script[\s\S]*?>([\s\S]*?)<\/script>/i);
@@ -113,7 +123,7 @@ export default function sfcPlugin(options: SfcPluginOptions = {}): Plugin {
               const relativeFilePath = '../' + path.relative(process.cwd(), fullPath).replace(/\\/g, '/');
               // if tag wasn't inferred, mark as handler-only so client router can ignore it
               if (!attrs.tag) attrs.handlerOnly = 'true';
-              routes.push({ ...attrs, paramNames, component, filePath: relativeFilePath });
+              routes.push({ ...attrs, path: p, paramNames, component, filePath: relativeFilePath });
             }
           }
         }
@@ -144,9 +154,6 @@ export default function sfcPlugin(options: SfcPluginOptions = {}): Plugin {
         };
       }
     },
-
-    // simple in-memory cache: id -> { mtime, code }
-    _sfcCache: new Map(),
 
     async configureServer(server: ViteDevServer) {
       if ((server as any)._sfcMiddlewaresAdded) return;
@@ -365,7 +372,7 @@ export default function sfcPlugin(options: SfcPluginOptions = {}): Plugin {
           try {
             if (/export\s+default\s+class\b/.test(src)) {
               // find decorator+method occurrences
-              const methodRe = /@([A-Za-z_$][\w$]*)\s*(?:\s*\(\s*(?:(['"`])([^\2]*?)\2\s*)?\)\s*)?\s*([A-Za-z_$][\w$]*)\s*\(/g;
+              const methodRe = /@([A-Za-z_$][\w$]*)\s*(?:\s*\(\s*(?:(['"`])((?:(?!\2)[\s\S])*?)\2\s*)?\)\s*)?\s*([A-Za-z_$][\w$]*)\s*\(/g;
               let m2;
               const assigns: string[] = [];
               while ((m2 = methodRe.exec(src)) !== null) {
@@ -397,7 +404,7 @@ export default function sfcPlugin(options: SfcPluginOptions = {}): Plugin {
               if (astWithDecorators) {
                 // handle class method decorators: attach metadata to prototype
                 traverse(astWithDecorators as any, {
-                  ClassDeclaration(path) {
+                  ClassDeclaration(path: any) {
                     const cls = path.node;
                     const name = cls.id ? cls.id.name : null;
                     if (!name) return;
@@ -432,7 +439,7 @@ export default function sfcPlugin(options: SfcPluginOptions = {}): Plugin {
                   },
 
                   
-                  ClassExpression(path) {
+                  ClassExpression(path: any) {
                     // handle similar to ClassDeclaration by ensuring a variable name
                     const cls = path.node;
                     const parent = path.parentPath;
@@ -480,7 +487,7 @@ export default function sfcPlugin(options: SfcPluginOptions = {}): Plugin {
               const ast = parser.parse(replaced, { sourceType: 'module', plugins: ['typescript'] });
 
               traverse(ast as any, {
-                ExportDefaultDeclaration(path) {
+                ExportDefaultDeclaration(path: any) {
                   const decl = path.node.declaration;
                   if (t.isObjectExpression(decl)) {
                     const props = decl.properties.slice();
@@ -592,7 +599,7 @@ export default function sfcPlugin(options: SfcPluginOptions = {}): Plugin {
           const cacheKey = real + '::script';
           const stat = fs.statSync(file);
           const mtime = stat.mtimeMs;
-          const cache = (this as any)._sfcCache;
+          const cache = sfcCache;
           const cached = cache.get(cacheKey);
           if (cached && cached.mtime === mtime) return cached.code;
           const res = await esbuild.transform(preprocessed || 'export default {}', { loader: 'ts', sourcemap: 'inline', format: 'esm', target: 'es2022', tsconfigRaw: { compilerOptions: { experimentalDecorators: true } } });
@@ -602,7 +609,7 @@ export default function sfcPlugin(options: SfcPluginOptions = {}): Plugin {
             // simple scan of original scriptContent for @decorator('selector') on anonymous default class
             if (/export\s+default\s+class/.test(scriptContent || '')) {
               const assigns: string[] = [];
-              const methodRe = /^[ \t]*@([A-Za-z_$][\w$]*)\s*(?:\s*\(\s*(?:(['\"])([^\2]*?)\2\s*)?\)\s*)?\s*([A-Za-z_$][\w$]*)\s*\(/gm;
+              const methodRe = /^[ \t]*@([A-Za-z_$][\w$]*)\s*(?:\s*\(\s*(?:(['\"])((?:(?!\2)[\s\S])*?)\2\s*)?\)\s*)?\s*([A-Za-z_$][\w$]*)\s*\(/gm;
               let mm: RegExpExecArray | null;
               while ((mm = methodRe.exec(scriptContent || '')) !== null) {
                 const dec = mm[1];
@@ -635,7 +642,7 @@ export default function sfcPlugin(options: SfcPluginOptions = {}): Plugin {
             try {
               if (/export\s+default\s+class/.test(scriptContent || '')) {
                 const assigns: string[] = [];
-                const methodRe = /^[ \t]*@([A-Za-z_$][\w$]*)\s*(?:\s*\(\s*(?:(['\"])\3([^\2]*?)\2\s*)?\)\s*)?\s*([A-Za-z_$][\w$]*)\s*\(/gm;
+                const methodRe = /^[ \t]*@([A-Za-z_$][\w$]*)\s*(?:\s*\(\s*(?:(['\"])((?:(?!\2)[\s\S])*?)\2\s*)?\)\s*)?\s*([A-Za-z_$][\w$]*)\s*\(/gm;
                 let mm: RegExpExecArray | null;
                 while ((mm = methodRe.exec(scriptContent || '')) !== null) {
                   const dec = mm[1];
@@ -648,7 +655,7 @@ export default function sfcPlugin(options: SfcPluginOptions = {}): Plugin {
             } catch (ee) {}
 
             const cacheKey = real + '::script';
-            try { const cache = (this as any)._sfcCache; const stat = fs.statSync(file); cache.set(cacheKey, { mtime: stat.mtimeMs, code: finalCode }); } catch (ee) {}
+            try { const stat = fs.statSync(file); sfcCache.set(cacheKey, { mtime: stat.mtimeMs, code: finalCode }); } catch (ee) {}
             return finalCode;
           } catch (ee) {
             // As a last resort, return a stripped version without decorator tokens
@@ -699,7 +706,7 @@ export default function sfcPlugin(options: SfcPluginOptions = {}): Plugin {
 
     async handleHotUpdate(ctx) {
       const { file, server, modules } = ctx;
-      if (!file || !file.endsWith('.sfc')) return null;
+      if (!file || !file.endsWith('.sfc')) return;
       try {
         // Invalidate persistent cache on file change
         if (transformCache) {
@@ -707,7 +714,7 @@ export default function sfcPlugin(options: SfcPluginOptions = {}): Plugin {
           transformCache.invalidate(file + '::script');
         }
         
-        const cache = (this as any)._sfcCache as Map<string, any>;
+        const cache = sfcCache;
         const scriptKey = file + '::script';
         if (cache && cache.has(scriptKey)) cache.delete(scriptKey);
 
@@ -744,7 +751,7 @@ export default function sfcPlugin(options: SfcPluginOptions = {}): Plugin {
         if (modules && modules.length) return modules;
         return Array.from(server.moduleGraph.getModulesByFile(file) || []);
       } catch (e) {
-        return null;
+        return;
       }
     },
 
@@ -763,10 +770,12 @@ export default function sfcPlugin(options: SfcPluginOptions = {}): Plugin {
       });
 
       let mainFile: string | null = null;
+      let entryChunk: any = null;
       for (const [fileName, item] of Object.entries(bundle)) {
         const it: any = item;
         if (it.type === 'chunk' && it.isEntry) {
           mainFile = fileName;
+          entryChunk = it;
           break;
         }
       }
@@ -781,18 +790,87 @@ export default function sfcPlugin(options: SfcPluginOptions = {}): Plugin {
       }
       mainFile ||= 'assets/app.js';
 
+      const htmlAsset = bundle['index.html'] as any;
+      const baseHtml = htmlAsset?.type === 'asset'
+        ? typeof htmlAsset.source === 'string'
+          ? htmlAsset.source
+          : new TextDecoder().decode(htmlAsset.source)
+        : `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><div id="app"></div><script type="module" src="/${mainFile}"></script></body></html>`;
+
       const escapeHtml = (value: unknown) => String(value)
         .replace(/&/g, '&amp;')
+        .replace(/'/g, '&#39;')
         .replace(/"/g, '&quot;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;');
+
+      const safeCss = (css: string) => css.replace(/</g, '\\3C ');
+      const normalizedId = (id: string) => path.resolve(id.split('?')[0]).replace(/\\/g, '/').toLowerCase();
+      const compiledComponents = new Map<string, Awaited<ReturnType<typeof transformSFC>>>();
+
+      const compileComponent = async (file: string) => {
+        const absolute = path.resolve(file);
+        let compiled = compiledComponents.get(absolute);
+        if (!compiled) {
+          compiled = await transformSFC(fs.readFileSync(absolute, 'utf8'), absolute);
+          compiledComponents.set(absolute, compiled);
+        }
+        return compiled;
+      };
+
+      const eagerGlobalCss: string[] = [];
+      for (const moduleId of Object.keys(entryChunk?.modules || {})) {
+        if (!moduleId.split('?')[0].endsWith('.sfc')) continue;
+        const compiled = await compileComponent(moduleId.split('?')[0]);
+        if (compiled.css_global) eagerGlobalCss.push(compiled.css_global);
+      }
+      const globalCss = [...new Set(eagerGlobalCss)].join('\n');
+
+      const routeComponentFile = (route: Record<string, any>) => {
+        if (!route.component) return null;
+        return path.resolve(process.cwd(), 'components', `${route.component}.sfc`);
+      };
+
+      const routeChunkFile = (componentFile: string | null) => {
+        if (!componentFile) return null;
+        const target = normalizedId(componentFile);
+        for (const [fileName, item] of Object.entries(bundle)) {
+          const chunk: any = item;
+          if (chunk.type !== 'chunk') continue;
+          if (chunk.facadeModuleId && normalizedId(chunk.facadeModuleId) === target) return fileName;
+          if (Object.keys(chunk.modules || {}).some(id => normalizedId(id) === target)) return fileName;
+        }
+        return null;
+      };
+
+      const renderTemplate = (template: string, params: Record<string, string | number>) => {
+        let rendered = template;
+        for (const [name, value] of Object.entries(params)) {
+          const token = new RegExp(`\\{\\{\\s*${name}\\s*\\}\\}`, 'g');
+          rendered = rendered.replace(token, escapeHtml(value));
+        }
+        return rendered;
+      };
+
+      const injectPage = (content: string, criticalCss: string, preloadFile: string | null) => {
+        const head = [
+          criticalCss ? `<style data-sfc-critical>${safeCss(criticalCss)}</style>` : '',
+          preloadFile ? `<link rel="modulepreload" href="/${escapeHtml(preloadFile)}">` : ''
+        ].filter(Boolean).join('');
+        const withHead = baseHtml.replace('</head>', `${head}</head>`);
+        const app = `<div id="app">${content}</div>`;
+        if (/<div\s+id=["']app["']\s*><\/div>/i.test(withHead)) {
+          return withHead.replace(/<div\s+id=["']app["']\s*><\/div>/i, app);
+        }
+        throw new Error('[sfc:prerender] Build index must contain an empty #app mount element');
+      };
 
       const outputDirectory = (routePath: string) => {
         const parts = routePath.split('/').filter(Boolean);
         return parts.length ? path.posix.join(...parts) : '';
       };
 
-      const emitPage = (
+      const emitPage = async (
         route: Record<string, any>,
         concretePath: string,
         params: Record<string, string | number>,
@@ -808,6 +886,9 @@ export default function sfcPlugin(options: SfcPluginOptions = {}): Plugin {
         emittedPaths.add(concretePath);
 
         const tag = route.tag || 'div';
+        if (!/^[a-z][a-z0-9-]*-[a-z0-9-]+$/.test(tag)) {
+          throw new Error(`[sfc:prerender] Route "${route.path}" has invalid custom-element tag "${tag}"`);
+        }
         const blob = {
           route: concretePath,
           pattern: route.path,
@@ -816,7 +897,36 @@ export default function sfcPlugin(options: SfcPluginOptions = {}): Plugin {
         };
 
         if (htmlFile !== 'index.html') {
-          const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(concretePath)}</title></head><body><div id="app"><${tag}></${tag}></div><script type="module" src="/${mainFile}"></script></body></html>`;
+          const componentFile = routeComponentFile(route);
+          if (!componentFile || !fs.existsSync(componentFile)) {
+            throw new Error(`[sfc:prerender] Component source not found for route "${route.path}"`);
+          }
+          const component = await compileComponent(componentFile);
+          const routeMarkup = `<${tag} data-sfc-prerendered>${renderTemplate(component.template, params)}</${tag}>`;
+          let pageMarkup = routeMarkup;
+          let shadowCss = '';
+
+          if (route.layout) {
+            const layoutTag = String(route.layout);
+            if (!/^[a-z][a-z0-9-]*-[a-z0-9-]+$/.test(layoutTag)) {
+              throw new Error(`[sfc:prerender] Route "${route.path}" has invalid layout tag "${layoutTag}"`);
+            }
+            const layoutFile = resolveComponentPath(layoutTag);
+            if (!layoutFile) {
+              throw new Error(`[sfc:prerender] Layout component "${layoutTag}" was not found`);
+            }
+            const layout = await compileComponent(layoutFile);
+            const attributes = Object.entries(route)
+              .filter(([name, value]) => name.startsWith('layout-') && value !== undefined && value !== null)
+              .map(([name, value]) => ` ${name.slice('layout-'.length)}="${escapeHtml(value)}"`)
+              .join('');
+            shadowCss = [globalCss, layout.css_global || '', layout.css || ''].filter(Boolean).join('\n');
+            const declarativeShadow = `<template shadowrootmode="open"><style data-sfc-critical>${safeCss(shadowCss)}</style>${layout.template}</template>`;
+            pageMarkup = `<${layoutTag} data-sfc-route-layout${attributes}>${declarativeShadow}${routeMarkup}</${layoutTag}>`;
+          }
+
+          const criticalCss = [globalCss, component.css_global || '', component.css || ''].filter(Boolean).join('\n');
+          const html = injectPage(pageMarkup, criticalCss, routeChunkFile(componentFile));
           this.emitFile({ type: 'asset', fileName: htmlFile, source: html });
         }
         this.emitFile({
@@ -849,7 +959,7 @@ export default function sfcPlugin(options: SfcPluginOptions = {}): Plugin {
 
         const paramNames = Array.isArray(route.paramNames) ? route.paramNames : [];
         if (paramNames.length === 0) {
-          emitPage(route, String(route.path || '/'), {}, null);
+          await emitPage(route, String(route.path || '/'), {}, null);
           continue;
         }
 
@@ -895,7 +1005,7 @@ export default function sfcPlugin(options: SfcPluginOptions = {}): Plugin {
           if (concretePath.includes(':')) {
             throw new Error(`[sfc:prerender] Unresolved parameter in "${concretePath}"`);
           }
-          emitPage(route, concretePath, params, entry.data);
+          await emitPage(route, concretePath, params, entry.data);
         }
       }
 

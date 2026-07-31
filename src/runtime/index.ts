@@ -50,7 +50,7 @@ export type ComponentOptions = {
   shadow?: boolean;
   observedAttributes?: string[];
   connectedCallback?: () => void;
-  disconnectedCallback?: (name: string, oldV: any, newV: any) => void;
+  disconnectedCallback?: () => void;
   attributeChangedCallback?: (name: string, oldV: any, newV: any) => void;
   postHandler?: (body: any, req: any, res: any) => void;
 };
@@ -96,9 +96,11 @@ export function interpolateTemplate(root: Element | ShadowRoot, params: Record<s
 }
 
 // Track which styles have been attached to which elements
-const attachedStylesMap = new WeakMap<Element | ShadowRoot, Set<string>>();
+type StyleRoot = Document | Element | ShadowRoot;
 
-export function attachStyles(root: ShadowRoot | Element, css: string) {
+const attachedStylesMap = new WeakMap<StyleRoot, Set<string>>();
+
+export function attachStyles(root: StyleRoot, css: string) {
   if (!css) return;
   // debug flag: set to true during local debugging to get console traces
   const DEBUG_ATTACH = false;
@@ -241,8 +243,13 @@ export function defineComponent(optsOrCtor: any) {
           // connectedCallback DOM-ready by default and avoids forcing every SFC
           // author to schedule a microtask before querying their own template.
           if ((this.constructor as any).__sfc_template && !(this as any).__sfc_template_mounted) {
-            const frag = getTemplateFragment((this.constructor as any).__sfc_template);
-            mountRoot.appendChild(frag);
+            // Production pages may already contain light DOM or a declarative
+            // shadow root. Adopt that server-rendered tree instead of cloning a
+            // second copy of the template during custom-element upgrade.
+            if (!mountRoot.hasChildNodes()) {
+              const frag = getTemplateFragment((this.constructor as any).__sfc_template);
+              mountRoot.appendChild(frag);
+            }
             (this as any).__sfc_template_mounted = true;
           }
           // attach global styles first so shadow roots receive them, then attach component styles
@@ -411,9 +418,12 @@ export function defineComponent(optsOrCtor: any) {
     connectedCallback() {
       console.debug('[sfc] connected:', tag, this);
       const mountRoot: Element | ShadowRoot = this.shadow || this;
-      if (opts.template) {
-        const frag = getTemplateFragment(opts.template as string);
-        mountRoot.appendChild(frag);
+      if (opts.template && !(this as any).__sfc_template_mounted) {
+        if (!mountRoot.hasChildNodes()) {
+          const frag = getTemplateFragment(opts.template as string);
+          mountRoot.appendChild(frag);
+        }
+        (this as any).__sfc_template_mounted = true;
       }
       // attach registered global styles into mount root so shadow roots inherit them
       try {
@@ -441,14 +451,15 @@ export function defineComponent(optsOrCtor: any) {
       connectImagePreviewCache(mountRoot);
       // if attributeChangedCallback is provided but observedAttributes is not,
       // set up a MutationObserver fallback to notify attribute changes
-      if (typeof opts.attributeChangedCallback === 'function' && (!opts.observedAttributes || opts.observedAttributes.length === 0)) {
+      const attributeChanged = opts.attributeChangedCallback;
+      if (typeof attributeChanged === 'function' && (!opts.observedAttributes || opts.observedAttributes.length === 0)) {
         try {
           this.__attrObserver = new MutationObserver((mutations) => {
             for (const m of mutations) {
               if (m.type === 'attributes' && m.attributeName) {
                 const oldV = (m as MutationRecord).oldValue;
                 const newV = this.getAttribute(m.attributeName!);
-                try { opts.attributeChangedCallback.call(this, m.attributeName, oldV, newV); } catch (e) { console.error(e); }
+                try { attributeChanged.call(this, m.attributeName, oldV, newV); } catch (e) { console.error(e); }
               }
             }
           });

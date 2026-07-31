@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <style>
+    .field { fill: #0a0c0b; }
+    @media (prefers-color-scheme: light) { .field { fill: #151915; } }
+  </style>
+  <rect class="field" width="64" height="64" rx="14"/>
+  <path fill="#c4ff4d" d="M17 12h34l-8 10H26l-5 5 5 5h13l9 9v5l-7 7H13l8-10h16l4-4-4-4H23l-9-9v-5z"/>
+  <rect x="45" y="10" width="8" height="8" rx="2" fill="#70e1d1"/>
+</svg>

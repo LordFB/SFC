@@ -35,7 +35,8 @@ function parseArgument(source: string, event: Event): unknown {
   if (value === 'undefined') return undefined;
   if (/^-?(?:\d+\.?\d*|\.\d+)$/.test(value)) return Number(value);
   if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
-    return value.slice(1, -1).replace(/\\([\\'"nrt])/g, (_match, escaped) => ({ n: '\n', r: '\r', t: '\t' }[escaped] || escaped));
+    const escapes: Record<string, string> = { n: '\n', r: '\r', t: '\t' };
+    return value.slice(1, -1).replace(/\\([\\'"nrt])/g, (_match, escaped: string) => escapes[escaped] || escaped);
   }
   throw new SyntaxError(`Unsupported directive argument: ${value}`);
 }

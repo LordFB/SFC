@@ -80,9 +80,19 @@ demo-counter button { font: inherit; }
 ```
 
 The transformer extracts each block, compiles the component module and template
-bindings, scopes CSS, and exposes route metadata. The client router discovers
-route components through `import.meta.glob`, then loads only the component for
-the current URL.
+bindings, attaches component CSS, and exposes route metadata. Production routes
+contain real template HTML, first-paint CSS, and an exact module preload. The
+client router discovers route components through `import.meta.glob`, then loads
+only the component for the current URL and upgrades the existing DOM in place.
+
+Routes can declare a persistent custom-element layout. Production emits its
+Shadow DOM declaratively, so the complete layout and page render before the
+runtime loads:
+
+```html
+<route path="/guides" methods="GET"
+       layout="docs-shell" layout-section="guides" />
+```
 
 ## Realtime values
 
@@ -142,6 +152,7 @@ history cleanup required for older checkouts.
 ```bash
 npm test             # framework, adapters, realtime, and concurrency tests
 npm run build        # validate routes and emit dist/public
+npm run check        # typecheck, test, build, and enforce performance budgets
 npm run serve:dev    # transform components on demand
 npm run serve:preview
 npm run serve        # hardened production mode
