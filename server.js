@@ -671,6 +671,9 @@ async function handleRequest(req, res) {
     const safePath = path.normalize(urlPath).replace(/^(\.\.[\/\\])+/, '');
     let filePath = path.join(__dirname, safePath);
     const webPath = safePath.replace(/\\/g, '/');
+    if (webPath === '/playground-preview.html' || webPath === '/playground-preview.js') {
+      filePath = path.join(__dirname, 'public', webPath.slice(1));
+    }
 
     // Self-host the Monaco AMD distribution used by the documentation playground.
     // Keep the mapping narrowly rooted instead of exposing node_modules generally.

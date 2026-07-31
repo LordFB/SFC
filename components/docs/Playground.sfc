@@ -49,6 +49,7 @@ export default class extends HTMLElement {
   static tag = 'sfc-playground-page';
   private editor: any = null;
   private debounce = 0;
+  private previewRevision = 0;
   private cleanup: Array<() => void> = [];
 
   connectedCallback() {
@@ -56,6 +57,12 @@ export default class extends HTMLElement {
     fallback.value = initialSource;
     fallback.addEventListener('input', this.scheduleCompile);
     this.cleanup.push(() => fallback.removeEventListener('input', this.scheduleCompile));
+    const previewErrors = (event: MessageEvent) => {
+      const frame = this.querySelector('#preview') as HTMLIFrameElement;
+      if (event.source === frame.contentWindow && event.data?.type === 'sfc-preview-error') this.showDiagnostic(event.data.message);
+    };
+    window.addEventListener('message', previewErrors);
+    this.cleanup.push(() => window.removeEventListener('message', previewErrors));
     this.bindButton('#run', () => this.compile());
     this.bindButton('#reset', () => { this.setValue(initialSource); this.compile(); });
     this.bindButton('#format', () => this.editor?.getAction('editor.action.formatDocument')?.run());
@@ -136,9 +143,12 @@ export default class extends HTMLElement {
   }
 `;
       const enhancedExecutable=executable.replace('this.__bindTemplate();','this.__bindTemplate();\n      this.__bindDirectives();').replace(/\n}\ncustomElements\.define/,`\n${directiveRuntime}}\ncustomElements.define`);
-      const escapedScript=enhancedExecutable.replace(/<\/script/gi,'<\\/script');
-      const html=`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><${'style'}>*{box-sizing:border-box}html,body{margin:0;min-height:100%}${style}</${'style'}></head><body><${tag}></${tag}><script>window.addEventListener('error',e=>document.body.dataset.error=e.message);${escapedScript}<\/script></body></html>`;
-      (this.querySelector('#preview') as HTMLIFrameElement).srcdoc=html; this.showDiagnostic(null); this.setStatus('PREVIEW LIVE');
+      const frame=this.querySelector('#preview') as HTMLIFrameElement; const revision=++this.previewRevision;
+      frame.onload=()=>{
+        if(!this.isConnected||revision!==this.previewRevision)return;
+        frame.contentWindow?.postMessage({type:'sfc-preview-render',template,style,tag,script:enhancedExecutable},'*');
+      };
+      frame.src=`/playground-preview.html?revision=${revision}`; this.showDiagnostic(null); this.setStatus('PREVIEW LIVE');
     } catch(error) { this.showDiagnostic(error); }
     const time=this.querySelector('#compile-time'); if(time) time.textContent=`${(performance.now()-started).toFixed(1)} MS`;
   }

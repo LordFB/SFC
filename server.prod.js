@@ -43,6 +43,7 @@ const SECURITY_HEADERS = {
   'X-Content-Type-Options': 'nosniff',
   'X-Frame-Options': 'DENY',
 };
+const PLAYGROUND_CSP = "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'; script-src 'self' blob:; style-src 'unsafe-inline'; img-src data: https:; font-src data:; connect-src 'none'";
 
 // ─── MIME types ──────────────────────────────────────────────────────
 const MIME = {
@@ -132,6 +133,10 @@ async function handle(req, res) {
   if (!PREVIEW_MODE) res.setHeader('Strict-Transport-Security', 'max-age=63072000; includeSubDomains; preload');
   const url = new URL(req.url, `http://localhost:${PORT}`);
   const urlPath = url.pathname;
+  if (urlPath === '/playground-preview.html' || urlPath === '/playground-preview.js') {
+    res.setHeader('Content-Security-Policy', PLAYGROUND_CSP);
+    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  }
 
   if (urlPath === '/__sfc/capabilities' && (req.method === 'GET' || req.method === 'HEAD')) {
     const body = Buffer.from(JSON.stringify({ demoServices: DEMO_SERVICES_ENABLED }));

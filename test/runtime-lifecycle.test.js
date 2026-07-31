@@ -55,3 +55,17 @@ test('playground delegates SFC blocks to Monaco native language tokenizers', () 
   assert.match(playground, /token:'@rematch'.*nextEmbedded:'@pop'/, 'closing SFC blocks should return to the outer tokenizer');
   assert.match(playground, /token:'tag\.sfc'/, 'SFC block boundaries should retain distinct highlighting');
 });
+
+test('playground executes generated code only inside its dedicated CSP sandbox', () => {
+  const playground = readFileSync(new URL('../components/docs/Playground.sfc', import.meta.url), 'utf8');
+  const previewHtml = readFileSync(new URL('../public/playground-preview.html', import.meta.url), 'utf8');
+  const previewScript = readFileSync(new URL('../public/playground-preview.js', import.meta.url), 'utf8');
+  const productionServer = readFileSync(new URL('../server.prod.js', import.meta.url), 'utf8');
+
+  assert.doesNotMatch(playground, /\.srcdoc\s*=/, 'the preview must not inherit the application CSP through srcdoc');
+  assert.match(playground, /type:'sfc-preview-render'/, 'compiled previews should be sent to the sandbox document');
+  assert.match(previewHtml, /<script src="\/playground-preview\.js" defer><\/script>/, 'the sandbox bootstrap must be an external script');
+  assert.doesNotMatch(previewHtml, /<script(?!\s+src=)/, 'the sandbox document must not contain inline scripts');
+  assert.match(previewScript, /new Blob\(\[script\]/, 'generated code should use a revocable blob URL inside the sandbox');
+  assert.match(productionServer, /script-src 'self' blob:/, 'only the preview response should permit blob scripts');
+});
