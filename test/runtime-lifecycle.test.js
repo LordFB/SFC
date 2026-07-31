@@ -73,4 +73,6 @@ test('playground executes generated code only inside its dedicated CSP sandbox',
   assert.match(productionServer, /script-src 'self' blob:/, 'only the preview response should permit blob scripts');
   assert.match(productionServer, /Cross-Origin-Resource-Policy', 'cross-origin'/, 'the opaque-origin sandbox must be allowed to load its bootstrap');
   assert.match(developmentServer, /webPath === '\/playground-preview\.js'[\s\S]*Cross-Origin-Resource-Policy'[\s\S]*cross-origin/, 'the standalone server should expose the same sandbox bootstrap policy');
+  assert.match(developmentServer, /immutableAsset = PROD_MODE && \/\^\\\/assets/, 'only fingerprinted build assets should receive immutable caching');
+  assert.doesNotMatch(developmentServer, /PROD_MODE \? 'public, max-age=31536000, immutable' : 'no-cache'/, 'JIT modules and HTML must remain revalidatable in production mode');
 });

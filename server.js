@@ -798,12 +798,11 @@ async function handleRequest(req, res) {
     const { content: compressedContent, encoding } = compress(content, acceptEncoding);
     
     // Set headers
+    const immutableAsset = PROD_MODE && /^\/assets\/.+-[A-Za-z0-9_-]{6,}\.(?:js|css)$/.test(webPath);
     const headers = {
       'Content-Type': mimeType,
       'ETag': etag,
-      'Cache-Control': webPath === '/playground-preview.html' || webPath === '/playground-preview.js'
-        ? 'no-cache'
-        : PROD_MODE ? 'public, max-age=31536000, immutable' : 'no-cache',
+      'Cache-Control': immutableAsset ? 'public, max-age=31536000, immutable' : 'no-cache',
       'Connection': 'keep-alive',
       'Keep-Alive': 'timeout=5, max=1000'
     };
