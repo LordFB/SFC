@@ -1,0 +1,35 @@
+<template>
+  <main class="card">
+    <span class="eyebrow">Your SFC is ready</span>
+    <div class="capybara" role="img" aria-label="A friendly capybara">ᘛ⁐̤ᕐᐷ</div>
+    <h1>Calm code. Capybara energy.</h1>
+    <p>Edit <code>components/Home.sfc</code> and make this little habitat yours.</p>
+    <button @click="greet">Say hello</button>
+    <output aria-live="polite">{{ message }}</output>
+  </main>
+</template>
+
+<script>
+export default class extends HTMLElement {
+  static tag = 'capybara-home'
+  message = ''
+
+  greet() {
+    this.message = 'The capybara approves.'
+  }
+}
+</script>
+
+<style>
+capybara-home { display: grid; min-height: 100vh; place-items: center; padding: 2rem; }
+capybara-home .card { width: min(38rem, 100%); padding: 3rem; border: 1px solid #486354; border-radius: 2rem; background: #203127; box-shadow: 0 2rem 5rem #0b110d55; text-align: center; }
+capybara-home .eyebrow { color: #bde5a8; font-size: .78rem; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
+capybara-home .capybara { margin: 1.5rem 0 .5rem; color: #d5a968; font: 4rem/1 monospace; }
+capybara-home h1 { margin: 1rem 0; font-size: clamp(2rem, 7vw, 4rem); line-height: .95; }
+capybara-home p { color: #c6d4c9; line-height: 1.7; }
+capybara-home code { color: #efffc5; }
+capybara-home button { margin: 1.5rem .5rem .5rem; padding: .75rem 1.1rem; border: 0; border-radius: 999px; color: #172019; background: #c9f27b; cursor: pointer; font-weight: 800; }
+capybara-home output { display: block; min-height: 1.5em; color: #bde5a8; }
+</style>
+
+<route path="/" methods="GET" />

@@ -3,16 +3,36 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "bin": {
+    "sfc-cli": "./cli/bin/sfc-cli.js"
+  },
+  "files": [
+    "cli/bin",
+    "cli/src",
+    "cli/templates",
+    "data-adapters.js",
+    "database",
+    "env-loader.js",
+    "realtime-build.js",
+    "realtime-config.js",
+    "realtime-db.js",
+    "server.js",
+    "server.prod.js",
+    "src",
+    "tsconfig.json",
+    "vite.config.build.ts"
+  ],
   "engines": {
     "node": "^20.19.0 || >=22.12.0"
   },
   "scripts": {
+    "cli": "node ./cli/bin/sfc-cli.js",
     "brand:icons": "node scripts/generate-brand-icons.mjs",
     "build": "node --import ./env-loader.js ./node_modules/vite/bin/vite.js build --config vite.config.build.ts",
     "cache:clear": "node scripts/clear-sfc-cache.mjs",
     "typecheck": "tsc --noEmit",
     "check": "npm run typecheck && npm test && npm run build && npm run verify:prerender",
-    "test": "node --test test/*.test.js",
+    "test": "node --test test/*.test.js cli/test/*.test.js",
     "serve": "node --import ./env-loader.js server.prod.js",
     "serve:preview": "node --import ./env-loader.js server.prod.js --preview",
     "serve:dev": "node --import ./env-loader.js server.js",
@@ -21,7 +41,12 @@
   "dependencies": {
     "@netlify/database": "^1.1.0",
     "better-sqlite3": "^12.5.0",
-    "monaco-editor": "0.52.2"
+    "chalk": "^6.0.0",
+    "commander": "^15.0.0",
+    "figlet": "^1.11.4",
+    "inquirer": "^14.0.2",
+    "monaco-editor": "0.52.2",
+    "ora": "^9.4.1"
   },
   "devDependencies": {
     "@babel/generator": "^7.21.0",

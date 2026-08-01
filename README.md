@@ -29,6 +29,31 @@ npm run serve:dev
 Open <http://localhost:5173>. Changes to `.sfc` files are transformed on demand
 by the development server.
 
+## SFC CLI
+
+The bundled Node.js CLI uses Commander, Inquirer, Chalk, Ora, and Figlet. Link
+this checkout during development, or invoke it through the package script:
+
+```bash
+npm link
+sfc-cli create capybara-app
+
+# Equivalently: npm run cli -- create capybara-app
+```
+
+Its commands are designed for interactive use and also provide flags for CI:
+
+```bash
+sfc-cli create my-app                       # runnable capybara starter
+sfc-cli config --mode development           # ignored .env.development.local
+sfc-cli audit . --strict                    # SFC and security policy checks
+sfc-cli adapt inventory                     # secure HTTP adapter wizard
+```
+
+For automation, add `--no-interactive`. `config` accepts one or more
+`--set NAME=value` arguments. `adapt --help` lists flags for service URL,
+authentication, fixed same-origin operation path, HTTP method, and access.
+
 ## Build and preview
 
 ```bash
