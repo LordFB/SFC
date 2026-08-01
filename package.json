@@ -13,6 +13,7 @@
     "data-adapters.js",
     "database",
     "env-loader.js",
+    "public/brand/sfc-mark.svg",
     "realtime-build.js",
     "realtime-config.js",
     "realtime-db.js",

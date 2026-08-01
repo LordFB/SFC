@@ -1,0 +1,10 @@
+node_modules
+dist
+.sfc-debug
+.data/
+*.db
+*.db-wal
+*.db-shm
+.env
+.env.*
+!.env.example

@@ -15,6 +15,12 @@ test('create scaffolds an auditable capybara SFC application', () => {
   const target = scaffoldProject({ cwd: temporaryRoot, name: 'river-home' });
   assert.match(fs.readFileSync(path.join(target, 'components', 'Home.sfc'), 'utf8'), /capybara-home/);
   assert.ok(fs.existsSync(path.join(target, 'src', 'runtime', 'index.ts')));
+  assert.ok(fs.existsSync(path.join(target, 'src', 'devtools.ts')));
+  assert.ok(fs.existsSync(path.join(target, 'public', 'brand', 'sfc-mark.svg')));
+  const main = fs.readFileSync(path.join(target, 'src', 'main.ts'), 'utf8');
+  assert.match(main, /sfc:navigation/);
+  assert.match(main, /import\('\.\/devtools'\)/);
+  assert.match(main, /mountDevtools\(routes\)/);
   assert.deepEqual(auditProject({ cwd: target }).findings, []);
 });
 

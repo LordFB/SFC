@@ -12,7 +12,8 @@ const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '
 const templateRoot = path.join(packageRoot, 'cli', 'templates', 'capybara');
 const frameworkEntries = [
   'data-adapters.js', 'database', 'env-loader.js', 'realtime-build.js', 'realtime-config.js',
-  'realtime-db.js', 'server.js', 'server.prod.js', 'src', 'tsconfig.json', 'vite.config.build.ts'
+  'realtime-db.js', 'server.js', 'server.prod.js', 'src', 'public/brand/sfc-mark.svg',
+  'tsconfig.json', 'vite.config.build.ts'
 ];
 
 function copyFramework(target) {

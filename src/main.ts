@@ -221,6 +221,10 @@ async function navigateToRoute(fullPath: string, pushState = true) {
     } else {
       performTransition();
     }
+
+    window.dispatchEvent(new CustomEvent('sfc:navigation', {
+      detail: { route: matchedRoute, path: path + search }
+    }));
   } finally {
     // Remove loading indicator
     document.body.classList.remove('loading');
@@ -309,4 +313,10 @@ if (import.meta.hot) {
 			} catch (ee) {}
 		}
 	});
+}
+
+// Keep the framework debugger out of production while making it automatic in
+// both Vite and the standalone development server.
+if (!import.meta.env?.PROD) {
+  import('./devtools').then(({ mountDevtools }) => mountDevtools(activeRoutes));
 }

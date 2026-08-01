@@ -1,0 +1,1033 @@
+import { Plugin, ViteDevServer } from 'vite';
+import { transformSFC, invalidateTagMapCache, resolveComponentPath } from './transformer.ts';
+import fs from 'fs';
+import path from 'path';
+import { debounce } from './utils/debounce.ts';
+import esbuild from 'esbuild';
+import * as parser from '@babel/parser';
+import traverse from '@babel/traverse';
+import generate from '@babel/generator';
+import * as t from '@babel/types';
+import ts from 'typescript';
+import { getTransformCache, TransformCache } from './cache.ts';
+import { extractComponentTag } from './sfc-metadata.js';
+
+export interface SfcPluginOptions {
+  /** Enable production-like optimizations in dev */
+  productionMode?: boolean;
+  /** Pre-compile all SFC files on startup */
+  eagerCompile?: boolean;
+  /** Use persistent disk cache */
+  persistCache?: boolean;
+  /** Pre-compiled routes cache */
+  routesCache?: boolean;
+  /**
+   * Expand a dynamic route into concrete, database-backed build entries.
+   * Each entry becomes an HTML file and a colocated route-data.json blob.
+   */
+  resolvePrerenderRoutes?: (route: Record<string, any>) =>
+    | Array<{ params: Record<string, string | number>; data?: unknown }>
+    | Promise<Array<{ params: Record<string, string | number>; data?: unknown }>>;
+}
+
+type DiscoveredRoute = Record<string, unknown> & {
+  path: string;
+  paramNames: string[];
+  tag?: string;
+  handlerOnly?: string;
+  component?: string;
+  filePath?: string;
+};
+
+export default function sfcPlugin(options: SfcPluginOptions = {}): Plugin {
+  const {
+    productionMode = false,
+    eagerCompile = false,
+    persistCache = true,
+    resolvePrerenderRoutes
+  } = options;
+  const transformCache: TransformCache | null = persistCache ? getTransformCache() : null;
+  const sfcCache = new Map<string, { mtime: number; code: string }>();
+  const virtualModuleId = 'virtual:routes';
+  const resolvedVirtualId = '\0' + virtualModuleId;
+
+  function getRoutes(): DiscoveredRoute[] {
+    const componentsDir = path.resolve(process.cwd(), 'components');
+    const routes: DiscoveredRoute[] = [];
+
+    function scan(dir: string, prefix = ''): void {
+      const files = fs.readdirSync(dir);
+      for (const file of files) {
+        const fullPath = path.join(dir, file);
+        const stat = fs.statSync(fullPath);
+        if (stat.isDirectory()) {
+          scan(fullPath, prefix + '/' + file);
+        } else if (file.endsWith('.sfc')) {
+          const content = fs.readFileSync(fullPath, 'utf8');
+          const routeMatch = content.match(/<route([^>]*)>([\s\S]*?)<\/route>/i) || content.match(/<route([^>]*)\s*\/?>/i);
+          if (routeMatch) {
+            const attrString = routeMatch[1] || '';
+            const attrs: Record<string,string> = {};
+            for (const m of attrString.matchAll(/([a-zA-Z0-9-:]+)\s*=\s*"([^"]*)"/g)) {
+              attrs[m[1]] = m[2];
+            }
+            // Support redirect routes
+            if (attrs.redirect) {
+              attrs.isRedirect = 'true';
+              attrs.redirectMethod = attrs.method || '302';
+              // For redirect, path is required, no tag/component needed
+              let p = attrs.path;
+              if (!p || p === '/') {
+                const componentName = file.replace('.sfc', '').toLowerCase();
+                if (prefix === '' && componentName === 'home') {
+                  p = '/';
+                } else {
+                  p = prefix + '/' + componentName;
+                }
+              }
+              attrs.path = p;
+              const paramNames: string[] = [];
+              if (p) {
+                const matches = p.match(/:([a-zA-Z_][a-zA-Z0-9_]*)/g);
+                if (matches) {
+                  paramNames.push(...matches.map(m => m.slice(1)));
+                }
+              }
+              routes.push({ ...attrs, path: p, paramNames });
+            } else {
+              // extract tag from script
+              const scriptMatch = content.match(/<script[\s\S]*?>([\s\S]*?)<\/script>/i);
+              if (scriptMatch) {
+                const script = scriptMatch[1];
+                attrs.tag = extractComponentTag(script) || undefined;
+              }
+              let p = attrs.path;
+              const componentName = file.replace('.sfc', '').toLowerCase();
+              if (!p || p === '/') {
+                if (prefix === '' && componentName === 'home') {
+                  p = '/';
+                } else {
+                  p = prefix + '/' + componentName;
+                }
+              }
+              attrs.path = p;
+              const paramNames: string[] = [];
+              if (p) {
+                const matches = p.match(/:([a-zA-Z_][a-zA-Z0-9_]*)/g);
+                if (matches) {
+                  paramNames.push(...matches.map(m => m.slice(1)));
+                }
+              }
+              const component = path.relative(componentsDir, fullPath).replace('.sfc', '').replace(/\\/g, '/');
+              // Add filePath for lazy loading - relative to project root
+              const relativeFilePath = '../' + path.relative(process.cwd(), fullPath).replace(/\\/g, '/');
+              // if tag wasn't inferred, mark as handler-only so client router can ignore it
+              if (!attrs.tag) attrs.handlerOnly = 'true';
+              routes.push({ ...attrs, path: p, paramNames, component, filePath: relativeFilePath });
+            }
+          }
+        }
+      }
+    }
+
+    scan(componentsDir);
+    return routes;
+  }
+
+  return {
+    name: 'vite-plugin-sfc',
+    enforce: 'pre',
+
+    // For production builds, prevent Rollup conflicts but don't force
+    // inlineDynamicImports which may not be supported by all Rollup versions.
+    config(_cfg, { command }) {
+      if (command === 'build') {
+        return {
+          build: {
+            rollupOptions: {
+              output: {
+                // unset manualChunks to reduce split-chunk heuristics
+                manualChunks: undefined
+              }
+            }
+          }
+        };
+      }
+    },
+
+    async configureServer(server: ViteDevServer) {
+      if ((server as any)._sfcMiddlewaresAdded) return;
+      (server as any)._sfcMiddlewaresAdded = true;
+
+      // Eager compilation: pre-compile all SFC files on startup for instant subsequent loads
+      if (eagerCompile) {
+        const startTime = Date.now();
+        const componentsDir = path.resolve(process.cwd(), 'components');
+        const sfcFiles: string[] = [];
+        
+        const collectSfcFiles = (dir: string) => {
+          const items = fs.readdirSync(dir);
+          for (const item of items) {
+            const fullPath = path.join(dir, item);
+            const stat = fs.statSync(fullPath);
+            if (stat.isDirectory()) {
+              collectSfcFiles(fullPath);
+            } else if (item.endsWith('.sfc')) {
+              sfcFiles.push(fullPath);
+            }
+          }
+        };
+        
+        try {
+          collectSfcFiles(componentsDir);
+          console.log(`[sfc] Eager compiling ${sfcFiles.length} components...`);
+          
+          // Pre-transform all SFC files in parallel
+          await Promise.all(sfcFiles.map(async (file) => {
+            try {
+              const code = fs.readFileSync(file, 'utf8');
+              await transformSFC(code, file);
+            } catch (e) {
+              // Ignore individual file errors during eager compile
+            }
+          }));
+          
+          console.log(`[sfc] Eager compilation complete in ${Date.now() - startTime}ms`);
+        } catch (e) {
+          console.warn('[sfc] Eager compilation failed:', e);
+        }
+      }
+
+      // route manifest cache and mtime
+      let routesCache: ReturnType<typeof getRoutes> | null = null;
+      let routesCacheMtime: number | null = null;
+
+      async function buildRoutesCache() {
+        const r = getRoutes();
+        routesCache = r;
+        routesCacheMtime = Date.now();
+        return r;
+      }
+
+      // initialize cache
+      buildRoutesCache();
+
+      // debounced invalidation to reduce thrash
+      const componentsDir = path.resolve(process.cwd(), 'components');
+      const invalidate = debounce(async () => {
+        await buildRoutesCache();
+        try { server.ws.send({ type: 'full-reload' }); } catch (e) {}
+      }, 120);
+
+      // Filter watcher events to only .sfc files within the components directory.
+      // Previously, events for ALL watched files (including .sfc-debug, .sfc-cache,
+      // etc.) triggered a full-reload, causing the page to reload on first visit.
+      const isSfcInComponents = (filePath: string) => {
+        const normalized = path.resolve(filePath);
+        return normalized.startsWith(componentsDir) && normalized.endsWith('.sfc');
+      };
+
+      try {
+        server.watcher.add(componentsDir);
+        server.watcher.on('add', (f: string) => { if (isSfcInComponents(f)) { invalidateTagMapCache(); invalidate(); } });
+        server.watcher.on('change', (f: string) => { if (isSfcInComponents(f)) { invalidateTagMapCache(); invalidate(); } });
+        server.watcher.on('unlink', (f: string) => { if (isSfcInComponents(f)) { invalidateTagMapCache(); invalidate(); } });
+      } catch (e) {
+        // watcher may not be available in some contexts
+      }
+
+      // helper: match a route pattern like /users/:id against a request pathname
+      function pathMatches(routePath: string, reqPath: string) {
+        if (!routePath) return false;
+        // normalize: remove trailing slash unless root
+        const normRoute = routePath === '/' ? '/' : routePath.replace(/\/$/, '');
+        const normReq = reqPath === '/' ? '/' : reqPath.replace(/\/$/, '');
+        const parts = normRoute.split('/').filter(Boolean);
+        const reqParts = normReq.split('/').filter(Boolean);
+        if (parts.length !== reqParts.length) return false;
+        for (let i = 0; i < parts.length; i++) {
+          const p = parts[i];
+          if (p.startsWith(':')) continue;
+          if (p !== reqParts[i]) return false;
+        }
+        return true;
+      }
+      // Middleware: single handler consults the live routes cache to respond to POSTs
+      server.middlewares.use(async (req, res, next) => {
+        try {
+          const routes = routesCache ?? (await buildRoutesCache());
+          const reqUrl = req.url || '';
+          let pathname = '';
+          try { pathname = (new URL(reqUrl, 'http://localhost')).pathname; } catch (e) { pathname = reqUrl.split('?')[0] || reqUrl; }
+          if (req.method !== 'POST') return next();
+
+          // find matching route(s)
+          for (const route of routes) {
+            const methods = route.methods ? String(route.methods).split(',').map((m: string) => m.trim()) : ['GET'];
+            if (!methods.includes('POST')) continue;
+            if (!pathMatches(route.path, pathname)) continue;
+
+            // Collect body
+            let body = '';
+            for await (const chunk of req) { body += chunk; }
+
+            const ct = (req.headers['content-type'] || '').split(';')[0].trim();
+            let parsedBody: any = {};
+            if (!body) parsedBody = {};
+            else if (ct === 'application/json' || ct === 'application/vnd.api+json' || ct === '') {
+              try { parsedBody = JSON.parse(body); } catch (err) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'Invalid JSON body' })); return; }
+            } else if (ct === 'application/x-www-form-urlencoded') {
+              parsedBody = Object.fromEntries(new URLSearchParams(body));
+            } else {
+              parsedBody = body;
+            }
+
+            const scriptPath = path.resolve(process.cwd(), 'components', route.component + '.sfc');
+            const scriptId = scriptPath + '?sfc-script';
+            let mod: any = null;
+            try {
+              const sfcRaw = fs.readFileSync(scriptPath, 'utf8');
+              const m = sfcRaw.match(/<script[\s\S]*?>([\s\S]*?)<\/script>/i);
+              const scriptText = m ? m[1] : '';
+              const hasPostHandler = /postHandler\s*[:=\(]/.test(scriptText) || /\bpostHandler\s*\(/.test(scriptText);
+              if (hasPostHandler) {
+                mod = await server.ssrLoadModule(scriptId);
+              }
+            } catch (e) {
+              try { mod = await server.ssrLoadModule(scriptId); } catch (ee) { mod = null; }
+            }
+
+            let postHandler: any = null;
+            if (mod) {
+              if (mod.default) {
+                const def = mod.default;
+                if (typeof def === 'function') {
+                  try { const inst = new def(); if (typeof inst.postHandler === 'function') postHandler = inst.postHandler.bind(inst); } catch (e) { if (typeof def === 'function') postHandler = def; }
+                  if (!postHandler && typeof def.postHandler === 'function') postHandler = def.postHandler.bind(def);
+                } else if (typeof def === 'object') {
+                  if (typeof def.postHandler === 'function') postHandler = def.postHandler.bind(def);
+                }
+              }
+              if (!postHandler && typeof mod.postHandler === 'function') postHandler = mod.postHandler.bind(mod);
+            }
+
+            if (postHandler) {
+              try {
+                const out = await postHandler(parsedBody, req, res);
+                if (res.writableEnded) return;
+                if (out === undefined || out === null) { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ message: `POST handled for ${route.path}` })); return; }
+                const status = typeof out.status === 'number' ? out.status : 200;
+                const headers = out.headers || { 'Content-Type': 'application/json' };
+                let bodyOut = out.body;
+                if (headers['Content-Type'] && headers['Content-Type'].includes('application/json')) bodyOut = typeof bodyOut === 'string' ? bodyOut : JSON.stringify(bodyOut);
+                res.writeHead(status, headers);
+                res.end(bodyOut);
+                return;
+              } catch (err) { console.error('postHandler error', err); if (!res.writableEnded) { res.writeHead(500, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'Handler exception' })); } return; }
+            } else {
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ message: `POST handled for ${route.path}`, body: parsedBody }));
+              return;
+            }
+          }
+        } catch (e) {
+          // fallback
+        }
+        next();
+      });
+    },
+
+    resolveId(id) {
+      if (id === virtualModuleId) return resolvedVirtualId;
+      return null;
+    },
+
+    async load(id) {
+      if (id === resolvedVirtualId) {
+        const routes = getRoutes();
+        return `export const routes = ${JSON.stringify(routes)}`;
+      }
+
+      // handle virtual sfc script requests: path.sfc?sfc-script
+      if (id.endsWith('?sfc-script')) {
+        const real = id.slice(0, -'?sfc-script'.length);
+        // id may be absolute or relative; try to resolve
+        let file = real;
+        if (!fs.existsSync(file)) {
+          file = path.resolve(process.cwd(), real);
+        }
+        if (!fs.existsSync(file)) return null;
+        const src = fs.readFileSync(file, 'utf8');
+        // naive extraction of <script>...</script>
+        const m = src.match(/<script[\s\S]*?>([\s\S]*?)<\/script>/i);
+        const scriptContent = m ? m[1] : '';
+        // preprocess decorators (@click, @input, @change, @debounce, @throttle)
+        function astPreprocessDecorators(src: string) {
+          // Preserve strings and template literals verbatim. A global @-regex
+          // also rewrites template directives such as @Click and Monaco states.
+          const replaced = src;
+
+          // Quick regex fallback for anonymous `export default class` with simple decorators
+          // This covers the common case where a default exported anonymous class has method decorators like `@click('.btn') onClick(...) {}`
+          try {
+            if (/export\s+default\s+class\b/.test(src)) {
+              // find decorator+method occurrences
+              const methodRe = /@([A-Za-z_$][\w$]*)\s*(?:\s*\(\s*(?:(['"`])((?:(?!\2)[\s\S])*?)\2\s*)?\)\s*)?\s*([A-Za-z_$][\w$]*)\s*\(/g;
+              let m2;
+              const assigns: string[] = [];
+              while ((m2 = methodRe.exec(src)) !== null) {
+                const decName = m2[1];
+                const arg = m2[3] || '';
+                const methodName = m2[4];
+                assigns.push(`__SFC_CLS__.prototype.${methodName}.__sfc_decorators = [{type:'${decName}', args:[${arg ? `'${arg}'` : ''}]}];`);
+              }
+              if (assigns.length) {
+                // replace first `export default class` with const wrapper
+                const replacedClass = src.replace(/export\s+default\s+class/, 'const __SFC_CLS__ = class');
+                const final = replacedClass + '\nexport default __SFC_CLS__;' + '\n' + assigns.join('\n');
+                return final;
+              }
+            }
+          } catch (e) {
+            // ignore fallback errors and continue to AST path
+          }
+
+          try {
+              // try parsing with decorators support first (for class decorators)
+              let astWithDecorators: t.File | null = null;
+              try {
+                astWithDecorators = parser.parse(src, { sourceType: 'module', plugins: ['typescript', 'decorators-legacy', 'classProperties'] }) as any;
+              } catch (e) {
+                astWithDecorators = null;
+              }
+
+              if (astWithDecorators) {
+                // handle class method decorators: attach metadata to prototype
+                traverse(astWithDecorators as any, {
+                  ClassDeclaration(path: any) {
+                    const cls = path.node;
+                    const name = cls.id ? cls.id.name : null;
+                    if (!name) return;
+                    const assigns: t.Statement[] = [];
+                    for (const el of cls.body.body) {
+                      if ((t.isClassMethod(el) || t.isClassPrivateMethod(el)) && el.decorators && el.decorators.length) {
+                        const decs = [] as Array<{type:string, args:any[]}>;
+                        for (const d of el.decorators) {
+                          if (t.isCallExpression(d.expression)) {
+                            const id = d.expression.callee;
+                            const args = d.expression.arguments;
+                            const typeName = t.isIdentifier(id) ? id.name : (t.isMemberExpression(id) && t.isIdentifier(id.property) ? id.property.name : 'unknown');
+                            const argExprs = args.map(a => a as t.Expression);
+                            decs.push({ type: typeName, args: argExprs });
+                          } else if (t.isIdentifier(d.expression)) {
+                            decs.push({ type: d.expression.name, args: [] });
+                          }
+                        }
+                        // remove decorators
+                        el.decorators = [];
+                        // create assignment: ClassName.prototype.method.__sfc_decorators = [{type:'click', args:[...]}];
+                        const proto = t.memberExpression(t.memberExpression(t.identifier(name), t.identifier('prototype')), (el.key as any));
+                        const decArray = t.arrayExpression(decs.map(dd => t.objectExpression([t.objectProperty(t.identifier('type'), t.stringLiteral(dd.type)), t.objectProperty(t.identifier('args'), t.arrayExpression(dd.args))])));
+                        const assign = t.expressionStatement(t.assignmentExpression('=', t.memberExpression(proto, t.identifier('__sfc_decorators')), decArray));
+                        assigns.push(assign);
+                      }
+                    }
+                    if (assigns.length) {
+                      // insert assigns after the class declaration
+                      path.insertAfter(assigns);
+                    }
+                  },
+
+                  
+                  ClassExpression(path: any) {
+                    // handle similar to ClassDeclaration by ensuring a variable name
+                    const cls = path.node;
+                    const parent = path.parentPath;
+                    if (parent && t.isExportDefaultDeclaration(parent.node)) {
+                      // use fixed identifier __SFC_CLS__ for anonymous default classes so other passes can reference it
+                      const tmpId = t.identifier('__SFC_CLS__');
+                      // capture any method decorators and build assignments to prototype
+                      const assigns: t.Statement[] = [];
+                      for (const el of cls.body.body) {
+                        if ((t.isClassMethod(el) || t.isClassPrivateMethod(el)) && el.decorators && el.decorators.length) {
+                          const decs: t.ObjectExpression[] = [];
+                          for (const d of el.decorators) {
+                            if (t.isCallExpression(d.expression)) {
+                              const id = d.expression.callee;
+                              const args = d.expression.arguments;
+                              const typeName = t.isIdentifier(id) ? id.name : (t.isMemberExpression(id) && t.isIdentifier(id.property) ? id.property.name : 'unknown');
+                              decs.push(t.objectExpression([t.objectProperty(t.identifier('type'), t.stringLiteral(typeName)), t.objectProperty(t.identifier('args'), t.arrayExpression(args as any))]));
+                            } else if (t.isIdentifier(d.expression)) {
+                              decs.push(t.objectExpression([t.objectProperty(t.identifier('type'), t.stringLiteral(d.expression.name)), t.objectProperty(t.identifier('args'), t.arrayExpression([]))]));
+                            }
+                          }
+                          // create assignment: __SFC_CLS__.prototype.method.__sfc_decorators = [ ... ]
+                          const key = el.key && t.isIdentifier(el.key) ? el.key : t.stringLiteral('unknown');
+                          const proto = t.memberExpression(t.memberExpression(t.identifier('__SFC_CLS__'), t.identifier('prototype')), key as any);
+                          const decArray = t.arrayExpression(decs as any);
+                          const assign = t.expressionStatement(t.assignmentExpression('=', t.memberExpression(proto, t.identifier('__sfc_decorators')), decArray));
+                          assigns.push(assign);
+                        }
+                      }
+
+                      // replace export default class { } with const __SFC_CLS__ = class { }; export default __SFC_CLS__; and append assigns
+                      const newDecl = t.variableDeclaration('const', [t.variableDeclarator(tmpId, cls)]);
+                      const exportDecl = t.exportDefaultDeclaration(tmpId);
+                      // replace the parent export default with the new decls
+                      parent.replaceWithMultiple([newDecl, exportDecl, ...assigns]);
+                    }
+                  }
+                });
+
+                const out = generate.default(astWithDecorators as any, { concise: false }).code;
+                return out;
+              }
+
+              // fallback: use comment-based approach (original logic)
+              const ast = parser.parse(replaced, { sourceType: 'module', plugins: ['typescript'] });
+
+              traverse(ast as any, {
+                ExportDefaultDeclaration(path: any) {
+                  const decl = path.node.declaration;
+                  if (t.isObjectExpression(decl)) {
+                    const props = decl.properties.slice();
+                    const newProps: t.ObjectProperty[] = [];
+                    for (const p of props) {
+                      if (t.isObjectMethod(p) || (t.isObjectProperty(p) && (t.isFunctionExpression(p.value) || t.isArrowFunctionExpression(p.value)))) {
+                        const node = p as any;
+                        const leading = (node.leadingComments || [])
+                          .map((c: any) => c.value.trim())
+                          .filter((v: string) => v.startsWith('__sfc_decorator:'));
+                        if (leading.length === 0 && node.key && node.key.leadingComments) {
+                          // sometimes comment attaches to key
+                          const kleading = (node.key.leadingComments || []).map((c: any) => c.value.trim()).filter((v: string) => v.startsWith('__sfc_decorator:'));
+                          if (kleading.length) leading.push(...kleading);
+                        }
+
+                        if (leading.length) {
+                          // extract function params and body
+                          let fnNode: t.FunctionExpression | null = null;
+                          if (t.isObjectMethod(p)) {
+                            fnNode = t.functionExpression(null, p.params as any, p.body as any, p.generator, p.async);
+                          } else {
+                            const vp = (p as t.ObjectProperty).value as any;
+                            if (t.isFunctionExpression(vp)) fnNode = vp;
+                            else if (t.isArrowFunctionExpression(vp)) {
+                              fnNode = t.functionExpression(null, vp.params as any, t.isBlockStatement(vp.body) ? vp.body : t.blockStatement([t.returnStatement(vp.body as any)]));
+                            }
+                          }
+                          if (!fnNode) { newProps.push(p as any); continue; }
+
+                          // parse decorators from comments
+                          const decs: Array<{type:string, args:string}> = [];
+                          for (const cm of leading) {
+                            const parts = cm.split(':');
+                            // format __sfc_decorator:name:encodedArgs
+                            if (parts.length >= 2) {
+                              const name = parts[1] || '';
+                              const enc = parts[2] || '';
+                              const args = enc ? decodeURIComponent(enc) : '';
+                              decs.push({ type: name, args });
+                            }
+                          }
+
+                          // create IIFE that returns function and attaches __sfc_decorators
+                          const decoratorsArray = t.arrayExpression(decs.map(d => {
+                            const argsList: t.Expression[] = [];
+                            if (d.args) {
+                              const parts = d.args.split(',').map(s => s.trim()).filter(Boolean);
+                              for (const tok of parts) {
+                                if (/^['"].*['"]$/.test(tok)) {
+                                  argsList.push(t.stringLiteral(tok.slice(1, -1)));
+                                } else if (/^\d+$/.test(tok)) {
+                                  argsList.push(t.numericLiteral(Number(tok)));
+                                } else if (tok === 'true' || tok === 'false') {
+                                  argsList.push(t.booleanLiteral(tok === 'true'));
+                                } else {
+                                  argsList.push(t.stringLiteral(tok));
+                                }
+                              }
+                            }
+                            return t.objectExpression([
+                              t.objectProperty(t.identifier('type'), t.stringLiteral(d.type)),
+                              t.objectProperty(t.identifier('args'), t.arrayExpression(argsList))
+                            ]);
+                          }));
+
+                          // build: (function(){ const fn = function(...) { ... }; fn.__sfc_decorators = [...]; return fn })()
+                          const fnId = t.identifier('fn');
+                          const decl = t.variableDeclaration('const', [t.variableDeclarator(fnId, fnNode)]);
+                          const assignExpr = t.expressionStatement(t.assignmentExpression('=', t.memberExpression(fnId, t.identifier('__sfc_decorators')), decoratorsArray));
+                          const ret = t.returnStatement(fnId);
+                          const iife = t.callExpression(t.parenthesizedExpression(t.functionExpression(null, [], t.blockStatement([decl, assignExpr, ret]))), []);
+
+                          const key = (t.isObjectMethod(p) || t.isObjectProperty(p)) ? (p as any).key : t.identifier('unknown');
+                          const newProp = t.objectProperty(key as any, iife);
+                          newProps.push(newProp as any);
+                          continue;
+                        }
+                      }
+                      newProps.push(p as any);
+                    }
+                    decl.properties = newProps as any;
+                  }
+                }
+              });
+
+              const out = generate.default(ast as any, { concise: false }).code;
+              return out;
+          } catch (err) {
+            // parsing/transformation failed, signal failure to caller
+            throw err;
+          }
+        }
+
+        function simplePreprocess(src: string) {
+          // Preserve source when decorator parsing fails. The TypeScript
+          // compiler remains the final decorator-aware fallback.
+          return src;
+        }
+
+        let preprocessed = scriptContent || '';
+        try {
+          preprocessed = astPreprocessDecorators(scriptContent || '');
+        } catch (err) {
+          preprocessed = simplePreprocess(scriptContent || '');
+        }
+        // use esbuild to transpile TypeScript to ESM for dev speed
+        try {
+          const cacheKey = real + '::script';
+          const stat = fs.statSync(file);
+          const mtime = stat.mtimeMs;
+          const cache = sfcCache;
+          const cached = cache.get(cacheKey);
+          if (cached && cached.mtime === mtime) return cached.code;
+          const res = await esbuild.transform(preprocessed || 'export default {}', { loader: 'ts', sourcemap: 'inline', format: 'esm', target: 'es2022', tsconfigRaw: { compilerOptions: { experimentalDecorators: true } } });
+          // try to inject prototype assignments into the transformed code for anonymous default classes
+          let finalCode = res.code;
+          try {
+            // simple scan of original scriptContent for @decorator('selector') on anonymous default class
+            if (/export\s+default\s+class/.test(scriptContent || '')) {
+              const assigns: string[] = [];
+              const methodRe = /^[ \t]*@([A-Za-z_$][\w$]*)\s*(?:\s*\(\s*(?:(['\"])((?:(?!\2)[\s\S])*?)\2\s*)?\)\s*)?\s*([A-Za-z_$][\w$]*)\s*\(/gm;
+              let mm: RegExpExecArray | null;
+              while ((mm = methodRe.exec(scriptContent || '')) !== null) {
+                const dec = mm[1];
+                const arg = mm[3] || '';
+                const method = mm[4];
+                assigns.push(`if (typeof __SFC_CLS__ !== 'undefined') { try { __SFC_CLS__.prototype.${method}.__sfc_decorators = [{type:'${dec}', args:[${arg ? `'${arg}'` : ''}]}]; } catch(e){} }`);
+              }
+              if (assigns.length) {
+                finalCode = finalCode + '\n' + assigns.join('\n');
+              }
+            }
+          } catch (e) {
+            // ignore injection errors
+          }
+          cache.set(cacheKey, { mtime, code: finalCode });
+          return finalCode;
+        } catch (e) {
+          // If esbuild failed, try using TypeScript's transpileModule to strip types
+          try {
+            const transpiled = ts.transpileModule(preprocessed || scriptContent || '', {
+              compilerOptions: {
+                target: ts.ScriptTarget.ES2022,
+                module: ts.ModuleKind.ES2022,
+                experimentalDecorators: true,
+                jsx: ts.JsxEmit.Preserve
+              }
+            });
+            let finalCode = transpiled.outputText || (preprocessed || scriptContent || 'export default {}');
+            // simple injection for anonymous class decorator metadata (same as before)
+            try {
+              if (/export\s+default\s+class/.test(scriptContent || '')) {
+                const assigns: string[] = [];
+                const methodRe = /^[ \t]*@([A-Za-z_$][\w$]*)\s*(?:\s*\(\s*(?:(['\"])((?:(?!\2)[\s\S])*?)\2\s*)?\)\s*)?\s*([A-Za-z_$][\w$]*)\s*\(/gm;
+                let mm: RegExpExecArray | null;
+                while ((mm = methodRe.exec(scriptContent || '')) !== null) {
+                  const dec = mm[1];
+                  const arg = mm[3] || '';
+                  const method = mm[4];
+                  assigns.push(`if (typeof __SFC_CLS__ !== 'undefined') { try { __SFC_CLS__.prototype.${method}.__sfc_decorators = [{type:'${dec}', args:[${arg ? `'${arg}'` : ''}]}]; } catch(e){} }`);
+                }
+                if (assigns.length) finalCode = finalCode + '\n' + assigns.join('\n');
+              }
+            } catch (ee) {}
+
+            const cacheKey = real + '::script';
+            try { const stat = fs.statSync(file); sfcCache.set(cacheKey, { mtime: stat.mtimeMs, code: finalCode }); } catch (ee) {}
+            return finalCode;
+          } catch (ee) {
+            // As a last resort, return a stripped version without decorator tokens
+            try { return simplePreprocess(scriptContent || '') || 'export default {}'; } catch (eee) { return 'export default {}'; }
+          }
+        }
+      }
+      return null;
+    },
+
+    async transform(code, id) {
+      if (!id.endsWith('.sfc')) return null;
+      
+      // Check persistent disk cache first for near-instant loads
+      if (transformCache) {
+        const cached = transformCache.get(id + '::transform', id);
+        if (cached) {
+          return {
+            code: cached.code,
+            map: cached.map
+          };
+        }
+      }
+      
+      // parse and transform into JS module
+      const result = await transformSFC(code, id);
+      
+      // Store in persistent cache
+      if (transformCache) {
+        transformCache.set(id + '::transform', id, {
+          code: result.code,
+          map: result.map,
+          template: result.template,
+          css: result.css,
+          css_global: result.css_global
+        });
+      }
+      
+      // Debug output writing removed - it triggered the file watcher and caused
+      // spurious full-reloads on first page visit. Use the .sfc-cache on disk or
+      // browser DevTools Sources to inspect transformed output instead.
+      
+      return {
+        code: result.code,
+        map: result.map
+      };
+    },
+
+    async handleHotUpdate(ctx) {
+      const { file, server, modules } = ctx;
+      if (!file || !file.endsWith('.sfc')) return;
+      try {
+        // Invalidate persistent cache on file change
+        if (transformCache) {
+          transformCache.invalidate(file + '::transform');
+          transformCache.invalidate(file + '::script');
+        }
+        
+        const cache = sfcCache;
+        const scriptKey = file + '::script';
+        if (cache && cache.has(scriptKey)) cache.delete(scriptKey);
+
+        // re-run the transform to ensure SCSS is compiled the same way as transform hook
+        const src = fs.readFileSync(file, 'utf8');
+        let transformed: any = null;
+        try {
+          transformed = await transformSFC(src, file);
+        } catch (e) {
+          // fallback to naive extraction
+        }
+
+        let template = '';
+        let css = '';
+        let css_global = '';
+        if (transformed) {
+          template = transformed.template || '';
+          css = transformed.css || '';
+          css_global = transformed.css_global || '';
+        } else {
+          const tplMatch = src.match(/<template[^>]*>([\s\S]*?)<\/template>/i);
+          const styleMatch = src.match(/<style([^>]*)>([\s\S]*?)<\/style>/i);
+          template = tplMatch ? tplMatch[1].trim() : '';
+          css = styleMatch ? styleMatch[2].trim() : '';
+          css_global = '';
+        }
+
+        // broadcast update via vite websocket (send compiled css and global css when available)
+        try {
+          server.ws.send({ type: 'custom', event: 'sfc:update', data: { file, template, css, css_global } });
+        } catch (e) {}
+
+        // return modules to be reloaded normally as well
+        if (modules && modules.length) return modules;
+        return Array.from(server.moduleGraph.getModulesByFile(file) || []);
+      } catch (e) {
+        return;
+      }
+    },
+
+    // During build, generate standalone HTML files per discovered route that reference
+    // the primary JS chunk produced by the build. We emit assets so they land
+    // in the `dist/` output.
+    async generateBundle(_options, bundle) {
+      const routes = getRoutes();
+      const generatedRoutes: Array<Record<string, unknown>> = [];
+      const emittedPaths = new Set<string>();
+
+      this.emitFile({
+        type: 'asset',
+        fileName: 'routes-manifest.json',
+        source: JSON.stringify(routes, null, 2)
+      });
+
+      let mainFile: string | null = null;
+      let entryChunk: any = null;
+      for (const [fileName, item] of Object.entries(bundle)) {
+        const it: any = item;
+        if (it.type === 'chunk' && it.isEntry) {
+          mainFile = fileName;
+          entryChunk = it;
+          break;
+        }
+      }
+      if (!mainFile) {
+        for (const [fileName, item] of Object.entries(bundle)) {
+          const it: any = item;
+          if ((it.type === 'chunk' || it.type === 'asset') && fileName.endsWith('.js')) {
+            mainFile = fileName;
+            break;
+          }
+        }
+      }
+      mainFile ||= 'assets/app.js';
+
+      const htmlAsset = bundle['index.html'] as any;
+      const baseHtml = htmlAsset?.type === 'asset'
+        ? typeof htmlAsset.source === 'string'
+          ? htmlAsset.source
+          : new TextDecoder().decode(htmlAsset.source)
+        : `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><div id="app"></div><script type="module" src="/${mainFile}"></script></body></html>`;
+
+      const escapeHtml = (value: unknown) => String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/'/g, '&#39;')
+        .replace(/"/g, '&quot;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+
+      const safeCss = (css: string) => css.replace(/</g, '\\3C ');
+      const normalizedId = (id: string) => path.resolve(id.split('?')[0]).replace(/\\/g, '/').toLowerCase();
+      const compiledComponents = new Map<string, Awaited<ReturnType<typeof transformSFC>>>();
+
+      const compileComponent = async (file: string) => {
+        const absolute = path.resolve(file);
+        let compiled = compiledComponents.get(absolute);
+        if (!compiled) {
+          compiled = await transformSFC(fs.readFileSync(absolute, 'utf8'), absolute);
+          compiledComponents.set(absolute, compiled);
+        }
+        return compiled;
+      };
+
+      const eagerGlobalCss: string[] = [];
+      for (const moduleId of Object.keys(entryChunk?.modules || {})) {
+        if (!moduleId.split('?')[0].endsWith('.sfc')) continue;
+        const compiled = await compileComponent(moduleId.split('?')[0]);
+        if (compiled.css_global) eagerGlobalCss.push(compiled.css_global);
+      }
+      const globalCss = [...new Set(eagerGlobalCss)].join('\n');
+
+      const routeComponentFile = (route: Record<string, any>) => {
+        if (!route.component) return null;
+        return path.resolve(process.cwd(), 'components', `${route.component}.sfc`);
+      };
+
+      const routeChunkFile = (componentFile: string | null) => {
+        if (!componentFile) return null;
+        const target = normalizedId(componentFile);
+        for (const [fileName, item] of Object.entries(bundle)) {
+          const chunk: any = item;
+          if (chunk.type !== 'chunk') continue;
+          if (chunk.facadeModuleId && normalizedId(chunk.facadeModuleId) === target) return fileName;
+          if (Object.keys(chunk.modules || {}).some(id => normalizedId(id) === target)) return fileName;
+        }
+        return null;
+      };
+
+      const renderTemplate = (template: string, params: Record<string, string | number>) => {
+        let rendered = template;
+        for (const [name, value] of Object.entries(params)) {
+          const token = new RegExp(`\\{\\{\\s*${name}\\s*\\}\\}`, 'g');
+          rendered = rendered.replace(token, escapeHtml(value));
+        }
+        return rendered;
+      };
+
+      const injectPage = (content: string, criticalCss: string, preloadFile: string | null) => {
+        const head = [
+          criticalCss ? `<style data-sfc-critical>${safeCss(criticalCss)}</style>` : '',
+          preloadFile ? `<link rel="modulepreload" href="/${escapeHtml(preloadFile)}">` : ''
+        ].filter(Boolean).join('');
+        const withHead = baseHtml.replace('</head>', `${head}</head>`);
+        const app = `<div id="app">${content}</div>`;
+        if (/<div\s+id=["']app["']\s*><\/div>/i.test(withHead)) {
+          return withHead.replace(/<div\s+id=["']app["']\s*><\/div>/i, app);
+        }
+        throw new Error('[sfc:prerender] Build index must contain an empty #app mount element');
+      };
+
+      const outputDirectory = (routePath: string) => {
+        const parts = routePath.split('/').filter(Boolean);
+        return parts.length ? path.posix.join(...parts) : '';
+      };
+
+      const emitPage = async (
+        route: Record<string, any>,
+        concretePath: string,
+        params: Record<string, string | number>,
+        data: unknown
+      ) => {
+        const directory = outputDirectory(concretePath);
+        const htmlFile = directory ? path.posix.join(directory, 'index.html') : 'index.html';
+        const blobFile = directory ? path.posix.join(directory, 'route-data.json') : 'route-data.json';
+
+        if (emittedPaths.has(concretePath)) {
+          throw new Error(`[sfc:prerender] Duplicate concrete route "${concretePath}"`);
+        }
+        emittedPaths.add(concretePath);
+
+        const tag = route.tag || 'div';
+        if (!/^[a-z][a-z0-9-]*-[a-z0-9-]+$/.test(tag)) {
+          throw new Error(`[sfc:prerender] Route "${route.path}" has invalid custom-element tag "${tag}"`);
+        }
+        const blob = {
+          route: concretePath,
+          pattern: route.path,
+          params,
+          data: data ?? null
+        };
+
+        if (htmlFile !== 'index.html') {
+          const componentFile = routeComponentFile(route);
+          if (!componentFile || !fs.existsSync(componentFile)) {
+            throw new Error(`[sfc:prerender] Component source not found for route "${route.path}"`);
+          }
+          const component = await compileComponent(componentFile);
+          const routeMarkup = `<${tag} data-sfc-prerendered>${renderTemplate(component.template, params)}</${tag}>`;
+          let pageMarkup = routeMarkup;
+          let shadowCss = '';
+
+          if (route.layout) {
+            const layoutTag = String(route.layout);
+            if (!/^[a-z][a-z0-9-]*-[a-z0-9-]+$/.test(layoutTag)) {
+              throw new Error(`[sfc:prerender] Route "${route.path}" has invalid layout tag "${layoutTag}"`);
+            }
+            const layoutFile = resolveComponentPath(layoutTag);
+            if (!layoutFile) {
+              throw new Error(`[sfc:prerender] Layout component "${layoutTag}" was not found`);
+            }
+            const layout = await compileComponent(layoutFile);
+            const attributes = Object.entries(route)
+              .filter(([name, value]) => name.startsWith('layout-') && value !== undefined && value !== null)
+              .map(([name, value]) => ` ${name.slice('layout-'.length)}="${escapeHtml(value)}"`)
+              .join('');
+            shadowCss = [globalCss, layout.css_global || '', layout.css || ''].filter(Boolean).join('\n');
+            const declarativeShadow = `<template shadowrootmode="open"><style data-sfc-critical>${safeCss(shadowCss)}</style>${layout.template}</template>`;
+            pageMarkup = `<${layoutTag} data-sfc-route-layout${attributes}>${declarativeShadow}${routeMarkup}</${layoutTag}>`;
+          }
+
+          const criticalCss = [globalCss, component.css_global || '', component.css || ''].filter(Boolean).join('\n');
+          const html = injectPage(pageMarkup, criticalCss, routeChunkFile(componentFile));
+          this.emitFile({ type: 'asset', fileName: htmlFile, source: html });
+        }
+        this.emitFile({
+          type: 'asset',
+          fileName: blobFile,
+          source: JSON.stringify(blob, null, 2)
+        });
+        generatedRoutes.push({
+          path: concretePath,
+          pattern: route.path,
+          params,
+          html: htmlFile,
+          blob: blobFile
+        });
+      };
+
+      for (const route of routes as Array<Record<string, any>>) {
+        if (route.handlerOnly) continue;
+
+        if (route.isRedirect === 'true' || route.isRedirect === true) {
+          const directory = outputDirectory(String(route.path || '/'));
+          const htmlFile = directory ? path.posix.join(directory, 'index.html') : 'index.html';
+          if (htmlFile !== 'index.html') {
+            const target = escapeHtml(route.redirect || '/');
+            const html = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=${target}"></head><body></body></html>`;
+            this.emitFile({ type: 'asset', fileName: htmlFile, source: html });
+          }
+          continue;
+        }
+
+        const paramNames = Array.isArray(route.paramNames) ? route.paramNames : [];
+        if (paramNames.length === 0) {
+          await emitPage(route, String(route.path || '/'), {}, null);
+          continue;
+        }
+
+        if (route.prerender === 'skip') {
+          generatedRoutes.push({ pattern: route.path, skipped: true });
+          continue;
+        }
+        if (!route.prerender) {
+          throw new Error(
+            `[sfc:prerender] Dynamic route "${route.path}" must declare a database source with prerender="..." or explicitly use prerender="skip"`
+          );
+        }
+        if (!resolvePrerenderRoutes) {
+          throw new Error(
+            `[sfc:prerender] Dynamic route "${route.path}" requires a resolvePrerenderRoutes build hook`
+          );
+        }
+
+        const entries = await resolvePrerenderRoutes(route);
+        if (!Array.isArray(entries)) {
+          throw new Error(`[sfc:prerender] Resolver for "${route.path}" did not return an array`);
+        }
+
+        for (const entry of entries) {
+          const params = entry?.params || {};
+          const missing = paramNames.filter(name => params[name] === undefined || params[name] === null);
+          if (missing.length) {
+            throw new Error(
+              `[sfc:prerender] Database entry for "${route.path}" is missing: ${missing.join(', ')}`
+            );
+          }
+
+          let concretePath = String(route.path);
+          for (const name of paramNames) {
+            const encoded = encodeURIComponent(String(params[name]));
+            if (!encoded || encoded === '.' || encoded === '..') {
+              throw new Error(
+                `[sfc:prerender] Unsafe value for "${name}" in route "${route.path}"`
+              );
+            }
+            concretePath = concretePath.replace(`:${name}`, encoded);
+          }
+          if (concretePath.includes(':')) {
+            throw new Error(`[sfc:prerender] Unresolved parameter in "${concretePath}"`);
+          }
+          await emitPage(route, concretePath, params, entry.data);
+        }
+      }
+
+      this.emitFile({
+        type: 'asset',
+        fileName: 'static-routes-manifest.json',
+        source: JSON.stringify(generatedRoutes, null, 2)
+      });
+
+      const concreteCount = generatedRoutes.filter(route => !route.skipped).length;
+      console.log(`[sfc:prerender] Generated ${concreteCount} route blobs from ${routes.length} declarations`);
+    },
+
+    async writeBundle() {
+      const { cleanUnusedRealtimeValues } = await import('../realtime-build.js');
+      const result = await cleanUnusedRealtimeValues({
+        componentsDirectory: path.resolve(process.cwd(), 'components')
+      });
+      console.log(
+        `[sfc:realtime] Retained ${result.keys.length} active values; removed ${result.values} values and ${result.events} events`
+      );
+    }
+    };
+  }
+

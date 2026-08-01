@@ -1,0 +1,6 @@
+<style global>
+  :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, sans-serif; background: #18251d; color: #f2f7ed; }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-width: 20rem; }
+  button, input, select, textarea { font: inherit; }
+</style>
