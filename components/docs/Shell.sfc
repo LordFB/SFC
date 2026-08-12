@@ -8,9 +8,10 @@
         <a data-section="intermediate" href="/intermediate"><i>02</i><span>Intermediate<small>Backend introduction</small></span></a>
         <a data-section="advanced" href="/advanced"><i>03</i><span>Advanced<small>Full-stack patterns</small></span></a>
         <a data-section="internals" href="/internals"><i>04</i><span>Internals<small>Compiler & runtime</small></span></a>
+        <a data-section="reference" href="/reference"><i>05</i><span>Reference<small>CLI & full API</small></span></a>
         <p data-demo-only>BUILD & PROVE</p>
-        <a data-demo-only data-section="playground" href="/playground"><i>05</i><span>Playground<small>Monaco + preview</small></span></a>
-        <a data-demo-only data-section="stress" href="/stress-testing"><i>06</i><span>Stress testing<small>Realtime gauntlet</small></span></a>
+        <a data-demo-only data-section="playground" href="/playground"><i>06</i><span>Playground<small>Monaco + preview</small></span></a>
+        <a data-demo-only data-section="stress" href="/stress-testing"><i>07</i><span>Stress testing<small>Realtime gauntlet</small></span></a>
       </nav>
       <div class="sidebar-foot"><i></i><span>NO VIRTUAL DOM<br><b>NATIVE BY DEFAULT</b></span></div>
     </aside>

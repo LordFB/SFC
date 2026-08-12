@@ -1,0 +1,219 @@
+<template>
+  <article class="doc-page">
+    <div class="doc-breadcrumb"><span>05</span><i></i><span>CLI and API reference</span></div>
+    <header class="doc-hero"><h1>Every command.<br><em>Every export.</em></h1><p>The complete surface area of the framework: the <code>sfc-cli</code> scaffolding and audit toolchain, the browser runtime, template directives, realtime values, server-side data adapters, and the portable SQL contract.</p><div class="doc-meta"><span>Reference</span><span>Lookup</span><span>CLI</span><span>API</span></div></header>
+    <nav class="doc-toc"><b>ON THIS PAGE</b><a href="#cli">CLI overview</a><a href="#create">create</a><a href="#config">config</a><a href="#audit">audit</a><a href="#adapt">adapt</a><a href="#runtime">Runtime API</a><a href="#directives">Directives</a><a href="#realtime">Realtime API</a><a href="#adapters">Data adapters</a><a href="#sql">SQL contract</a><a href="#routes">Route attributes</a><a href="#env">Environment</a></nav>
+
+    <section class="doc-section" id="cli"><div class="doc-section-head"><span>05.1</span><div><h2>The command line</h2><p class="doc-lead">One binary scaffolds a runnable project, writes ignored environment files, audits a codebase against framework and security policy, and generates server-side service adapters. Every command is interactive by default and fully scriptable with <code>--no-interactive</code>.</p></div></div>
+      <div class="doc-code"><div class="doc-code-head"><span>install and run</span><b>SFC-CLI</b></div><pre><code data-snippet="install"></code></pre></div>
+      <table class="doc-table"><thead><tr><th>COMMAND</th><th>PURPOSE</th><th>WRITES</th></tr></thead><tbody>
+        <tr><td><code>create [name]</code></td><td>Scaffold a runnable project</td><td>New project directory</td></tr>
+        <tr><td><code>config</code></td><td>Configure ignored environment values</td><td><code>.env.&lt;mode&gt;.local</code> (mode 0600)</td></tr>
+        <tr><td><code>audit [directory]</code></td><td>Check framework and security standards</td><td>Nothing; exit code only</td></tr>
+        <tr><td><code>adapt [name]</code></td><td>Generate a secure HTTP adapter</td><td><code>adapters/&lt;name&gt;.js</code>, <code>.env.example</code></td></tr>
+      </tbody></table>
+      <aside class="doc-note"><b>GLOBAL FLAGS</b><p><code>--help</code> prints the banner and command tree, <code>--version</code> reports the package version, and unknown commands produce a suggestion instead of a bare failure.</p></aside>
+    </section>
+
+    <section class="doc-section" id="create"><div class="doc-section-head"><span>05.2</span><div><h2>create</h2><p class="doc-lead">Copies the framework runtime, compiler, server, and database drivers next to a capybara-flavoured starter page, then writes a generated <code>package.json</code> without the CLI's own authoring dependencies.</p></div></div>
+      <div class="doc-code"><div class="doc-code-head"><span>sfc-cli create</span><b>SCAFFOLD</b></div><pre><code data-snippet="create"></code></pre></div>
+      <table class="doc-table"><thead><tr><th>OPTION</th><th>DEFAULT</th><th>BEHAVIOUR</th></tr></thead><tbody>
+        <tr><td><code>[name]</code></td><td>prompted</td><td>Lowercase letters, numbers, dots, dashes, underscores</td></tr>
+        <tr><td><code>--no-install</code></td><td>installs</td><td>Skip the dependency install step</td></tr>
+        <tr><td><code>--no-interactive</code></td><td>interactive</td><td>Require the project name as an argument</td></tr>
+      </tbody></table>
+      <aside class="doc-note"><b>SAFE BY CONSTRUCTION</b><p>A non-empty target directory is refused. If scaffolding fails partway, a directory the CLI created is removed again rather than left half written. The generated project ships <code>build</code>, <code>typecheck</code>, <code>serve</code>, <code>serve:preview</code>, and <code>serve:dev</code> scripts.</p></aside>
+    </section>
+
+    <section class="doc-section" id="config"><div class="doc-section-head"><span>05.3</span><div><h2>config</h2><p class="doc-lead">Writes <code>.env.development.local</code> or <code>.env.production.local</code>. Existing values are read, merged, sorted, and rewritten with restrictive file permissions; the <code>.local</code> suffix keeps them out of source control.</p></div></div>
+      <div class="doc-code"><div class="doc-code-head"><span>sfc-cli config</span><b>ENVIRONMENT</b></div><pre><code data-snippet="config"></code></pre></div>
+      <table class="doc-table"><thead><tr><th>OPTION</th><th>VALUES</th><th>NOTES</th></tr></thead><tbody>
+        <tr><td><code>-m, --mode</code></td><td><code>development</code> | <code>production</code></td><td>Any other value is rejected</td></tr>
+        <tr><td><code>-s, --set NAME=value</code></td><td>repeatable</td><td>Names must match <code>[A-Za-z_][A-Za-z0-9_]*</code></td></tr>
+        <tr><td><code>--no-interactive</code></td><td>flag</td><td>Requires at least one <code>--set</code></td></tr>
+      </tbody></table>
+      <aside class="doc-note"><b>INJECTION RESISTANT</b><p>Values containing newlines or null bytes are refused so a single assignment can never forge extra variables. Non-trivial values are JSON-quoted on write. The interactive prompt offers hidden input for anything marked secret.</p></aside>
+    </section>
+
+    <section class="doc-section" id="audit"><div class="doc-section-head"><span>05.4</span><div><h2>audit</h2><p class="doc-lead">Walks every <code>.sfc</code> file under <code>components/</code> plus project-level configuration, and reports coded findings. Errors always fail the command; <code>--strict</code> promotes warnings to failures for CI.</p></div></div>
+      <div class="doc-code"><div class="doc-code-head"><span>sfc-cli audit</span><b>POLICY</b></div><pre><code data-snippet="audit"></code></pre></div>
+      <table class="doc-table"><thead><tr><th>CODE</th><th>SEVERITY</th><th>MEANING</th></tr></thead><tbody>
+        <tr><td><code>SFC_DUPLICATE_TAG</code></td><td>error</td><td>Two components declare the same custom-element tag</td></tr>
+        <tr><td><code>SFC_DYNAMIC_PRERENDER</code></td><td>error</td><td>Dynamic route without <code>prerender</code> or <code>prerender="skip"</code></td></tr>
+        <tr><td><code>SFC_UNCONTAINED_STYLE</code></td><td>error</td><td>Light-DOM selector is not prefixed with the component tag</td></tr>
+        <tr><td><code>SFC_STYLE_NO_TAG</code></td><td>error</td><td>Light-DOM styles without a detectable <code>static tag</code></td></tr>
+        <tr><td><code>SFC_UNSAFE_HTML</code></td><td>error</td><td>Values interpolated into <code>innerHTML</code></td></tr>
+        <tr><td><code>SFC_CLIENT_AUTH_STORAGE</code></td><td>error</td><td>Auth or session state kept in <code>localStorage</code></td></tr>
+        <tr><td><code>SFC_CLIENT_SESSION_ID</code></td><td>error</td><td>Client-controlled session identifier</td></tr>
+        <tr><td><code>SFC_ENV_NOT_IGNORED</code></td><td>error</td><td><code>.gitignore</code> does not ignore <code>.env.*</code></td></tr>
+        <tr><td><code>SFC_EXAMPLE_SECRET</code></td><td>error</td><td><code>.env.example</code> appears to hold a real secret</td></tr>
+        <tr><td><code>SFC_COMPONENTS_MISSING</code></td><td>error</td><td>No <code>components/</code> directory</td></tr>
+        <tr><td><code>SFC_PACKAGE_MISSING</code></td><td>error</td><td>No <code>package.json</code></td></tr>
+        <tr><td><code>SFC_PACKAGE_INVALID</code></td><td>error</td><td><code>package.json</code> is not valid JSON</td></tr>
+        <tr><td><code>SFC_BUILD_SCRIPT_MISSING</code></td><td>error</td><td>No production build script</td></tr>
+        <tr><td><code>SFC_LISTENER_CLEANUP</code></td><td>warning</td><td>Window/document listener without <code>disconnectedCallback</code></td></tr>
+        <tr><td><code>SFC_SHARED_PRODUCTION_ENV</code></td><td>warning</td><td>A committed <code>.env.production</code> instead of a secret store</td></tr>
+      </tbody></table>
+      <p class="doc-lead"><code>--json</code> emits <code>{ root, files, findings, errors, warnings }</code> where each finding is <code>{ severity, code, file, message }</code>. Shadow-DOM components skip selector containment checks; <code>&lt;style global&gt;</code> blocks are exempt.</p>
+    </section>
+
+    <section class="doc-section" id="adapt"><div class="doc-section-head"><span>05.5</span><div><h2>adapt</h2><p class="doc-lead">Generates a server-side HTTP adapter plus one explicit operation boundary, and appends the required variable names to <code>.env.example</code> as placeholders — never real values.</p></div></div>
+      <div class="doc-code"><div class="doc-code-head"><span>sfc-cli adapt</span><b>GENERATED ADAPTER</b></div><pre><code data-snippet="adapt"></code></pre></div>
+      <table class="doc-table"><thead><tr><th>OPTION</th><th>VALUES</th><th>NOTES</th></tr></thead><tbody>
+        <tr><td><code>--base-url</code></td><td>absolute URL</td><td>HTTPS required; HTTP only for loopback</td></tr>
+        <tr><td><code>--auth</code></td><td><code>none</code> <code>bearer</code> <code>api-key</code> <code>basic</code> <code>oauth2</code></td><td>Selects the generated credential wiring</td></tr>
+        <tr><td><code>--token-url</code></td><td>absolute URL</td><td>OAuth2 client-credentials endpoint</td></tr>
+        <tr><td><code>--api-key-header</code></td><td>header name</td><td>Defaults to <code>X-API-Key</code></td></tr>
+        <tr><td><code>--env-prefix</code></td><td>identifier</td><td>Defaults to the adapter name, upper-cased</td></tr>
+        <tr><td><code>--operation</code></td><td>identifier</td><td>Defaults to <code>health-check</code></td></tr>
+        <tr><td><code>--path</code></td><td>same-origin path</td><td>Must begin with a single slash</td></tr>
+        <tr><td><code>--method</code></td><td><code>GET</code> <code>POST</code> <code>PUT</code> <code>PATCH</code> <code>DELETE</code></td><td>Fixed at generation time</td></tr>
+        <tr><td><code>--access</code></td><td><code>authenticated</code> | <code>public</code></td><td>Emits <code>authorize()</code> or <code>public: true</code></td></tr>
+        <tr><td><code>--role</code></td><td>role name</td><td>Requires an exact session role</td></tr>
+        <tr><td><code>--force</code></td><td>flag</td><td>Replace an existing adapter file</td></tr>
+      </tbody></table>
+      <aside class="doc-note"><b>CREDENTIALS NEVER TOUCH THE GENERATOR</b><p>The command writes variable <em>names</em>. Secrets are read at runtime through <code>env()</code> and <code>secretFile()</code>. URLs embedding a username or password are rejected outright, and the request path is fixed in the generated source so a caller cannot redirect the operation.</p></aside>
+    </section>
+
+    <section class="doc-section" id="runtime"><div class="doc-section-head"><span>05.6</span><div><h2>Runtime API</h2><p class="doc-lead">Exports from <code>/src/runtime/index</code>. The compiler calls most of these for you; they are documented because they are also usable directly.</p></div></div>
+      <table class="doc-table"><thead><tr><th>EXPORT</th><th>SIGNATURE</th><th>DESCRIPTION</th></tr></thead><tbody>
+        <tr><td><code>defineComponent</code></td><td><code>(ctorOrOptions) =&gt; constructor</code></td><td>Wraps a class or options object and registers the custom element</td></tr>
+        <tr><td><code>attachStyles</code></td><td><code>(root, css) =&gt; void</code></td><td>Hash-deduplicated constructed stylesheet attachment with a <code>&lt;style&gt;</code> fallback</td></tr>
+        <tr><td><code>parseRouteParams</code></td><td><code>(pattern, path, names) =&gt; Record&lt;string,string&gt;</code></td><td>Extracts <code>:param</code> values, trailing slashes normalized</td></tr>
+        <tr><td><code>parseQueryParams</code></td><td><code>(search) =&gt; Record&lt;string,string&gt;</code></td><td>Flattens a query string into a plain object</td></tr>
+        <tr><td><code>interpolateTemplate</code></td><td><code>(root, params) =&gt; void</code></td><td>Replaces <code>{{ name }}</code> in text nodes only</td></tr>
+        <tr><td><code>clearSfcRuntimeCaches</code></td><td><code>() =&gt; Promise&lt;{entries, bytes}&gt;</code></td><td>Drops template fragments and persisted image blobs</td></tr>
+        <tr><td><code>configureImagePreviewCache</code></td><td><code>(options) =&gt; void</code></td><td>Adjusts the IndexedDB preview cache</td></tr>
+        <tr><td><code>clearImagePreviewCache</code></td><td><code>() =&gt; Promise&lt;result&gt;</code></td><td>Removes cached preview blobs</td></tr>
+        <tr><td><code>DEFAULT_IMAGE_CACHE_MAX_SIZE</code></td><td><code>number</code></td><td>50 MB default budget</td></tr>
+        <tr><td><code>IMAGE_CACHE_DISABLE_ATTRIBUTE</code></td><td><code>'no-image-cache'</code></td><td>Per-element opt-out attribute</td></tr>
+      </tbody></table>
+      <p class="doc-lead">Static class members recognized on a component: <code>tag</code> (required), <code>shadow</code>, and <code>observedAttributes</code>. Instance members provided before <code>connectedCallback</code>: <code>routeParams</code>, <code>queryParams</code>, and their merge as <code>params</code>.</p>
+      <div class="doc-code"><div class="doc-code-head"><span>component contract</span><b>LIFECYCLE ORDER</b></div><pre><code data-snippet="lifecycle"></code></pre></div>
+    </section>
+
+    <section class="doc-section" id="directives"><div class="doc-section-head"><span>05.7</span><div><h2>Template directives</h2><p class="doc-lead">Two attribute directives are parsed from the mounted template, bound to component methods, and removed from the DOM. Their listeners are released automatically on disconnect.</p></div></div>
+      <div class="doc-grid"><div class="doc-card"><span>@CLICK</span><h3>Method call on click</h3><p>Calls a component method with literal arguments or <code>$event</code>.</p></div><div class="doc-card"><span>@HOVER</span><h3>Method or inline CSS</h3><p>Either calls a method on <code>mouseenter</code>, or applies a CSS object and restores the previous inline values on <code>mouseleave</code>.</p></div></div>
+      <div class="doc-code"><div class="doc-code-head"><span>directives</span><b>TEMPLATE</b></div><pre><code data-snippet="directives"></code></pre></div>
+      <aside class="doc-note"><b>NOT AN EXPRESSION LANGUAGE</b><p>Arguments accept only <code>$event</code>, numbers, quoted strings, <code>true</code>, <code>false</code>, <code>null</code>, and <code>undefined</code>. Anything else raises a syntax error at bind time instead of evaluating arbitrary code. Method decorators <code>@click</code>, <code>@input</code>, <code>@change</code>, <code>@submit</code>, <code>@debounce(ms)</code>, and <code>@throttle(ms)</code> are wired separately, one microtask after <code>connectedCallback</code>.</p></aside>
+    </section>
+
+    <section class="doc-section" id="realtime"><div class="doc-section-head"><span>05.8</span><div><h2>Realtime values</h2><p class="doc-lead">A realtime field binds a component property to a persistent server key. Updates arrive over Server-Sent Events, writes are version-checked, and subscriptions are released with the element.</p></div></div>
+      <table class="doc-table"><thead><tr><th>MEMBER</th><th>SIGNATURE</th><th>DESCRIPTION</th></tr></thead><tbody>
+        <tr><td><code>realtimeValue</code></td><td><code>(key, initial, options?)</code></td><td>Creates the reactive value; keys are 1–256 characters</td></tr>
+        <tr><td><code>isRealtimeValue</code></td><td><code>(value) =&gt; boolean</code></td><td>Type guard used by the runtime binder</td></tr>
+        <tr><td><code>.value</code></td><td><code>T</code></td><td>Current value, falling back to the initial value when deleted</td></tr>
+        <tr><td><code>.version</code></td><td><code>number</code></td><td>Monotonic version; <code>0</code> before the first snapshot</td></tr>
+        <tr><td><code>.snapshot</code></td><td><code>RealtimeSnapshot&lt;T&gt; | null</code></td><td><code>{ key, value, version, updatedAt, deleted }</code></td></tr>
+        <tr><td><code>.connect()</code></td><td><code>() =&gt; () =&gt; void</code></td><td>Reference-counted subscription; returns its own release</td></tr>
+        <tr><td><code>.subscribe(fn, emit?)</code></td><td><code>() =&gt; void</code></td><td>Listener called with value and snapshot</td></tr>
+        <tr><td><code>.set(value, options?)</code></td><td><code>Promise&lt;snapshot&gt;</code></td><td>Optional <code>expectedVersion</code> for compare-and-set</td></tr>
+        <tr><td><code>.delete(options?)</code></td><td><code>Promise&lt;snapshot&gt;</code></td><td>Tombstones the key; readers revert to the initial value</td></tr>
+        <tr><td><code>.update(updater, max?)</code></td><td><code>Promise&lt;snapshot&gt;</code></td><td>Retries on conflict, 8 attempts by default</td></tr>
+        <tr><td><code>RealtimeConflictError</code></td><td><code>Error &amp; { current }</code></td><td>Thrown on a version mismatch; carries the server snapshot</td></tr>
+      </tbody></table>
+      <div class="doc-code"><div class="doc-code-head"><span>realtime field</span><b>COMPONENT</b></div><pre><code data-snippet="realtime"></code></pre></div>
+      <aside class="doc-note"><b>PRODUCTION SCOPE</b><p>In a production build, a write to a key outside the exposed public namespaces is rejected in the client before it reaches the network. Mutable demonstration services stay disabled unless <code>ENABLE_DEMO_SERVICES=true</code>, and writes require an exact same-origin request.</p></aside>
+    </section>
+
+    <section class="doc-section" id="adapters"><div class="doc-section-head"><span>05.9</span><div><h2>Server data adapters</h2><p class="doc-lead">Exports from <code>data-adapters.js</code>. This module is server-only: it holds secrets, outbound transport, and the authorization boundary that components never see.</p></div></div>
+      <table class="doc-table"><thead><tr><th>EXPORT</th><th>KIND</th><th>DESCRIPTION</th></tr></thead><tbody>
+        <tr><td><code>env(name, options?)</code></td><td>secret</td><td>Opaque reference to an environment variable</td></tr>
+        <tr><td><code>secretFile(path, options?)</code></td><td>secret</td><td>Opaque reference to a file-mounted secret</td></tr>
+        <tr><td><code>isSecret(value)</code></td><td>guard</td><td>True for a secret reference</td></tr>
+        <tr><td><code>resolveSecret(value, label?)</code></td><td>async</td><td>Materializes a secret at the point of use</td></tr>
+        <tr><td><code>bearerAuth(token)</code></td><td>auth</td><td><code>Authorization: Bearer</code></td></tr>
+        <tr><td><code>basicAuth(user, password)</code></td><td>auth</td><td>HTTP basic credentials</td></tr>
+        <tr><td><code>apiKeyAuth(header, value, options?)</code></td><td>auth</td><td>Named header or query key</td></tr>
+        <tr><td><code>oauth2ClientCredentials(options)</code></td><td>auth</td><td>Token cached until 30s before expiry</td></tr>
+        <tr><td><code>mutualTls(options)</code></td><td>auth</td><td>Client certificate and key material</td></tr>
+        <tr><td><code>createSshTunnel(options)</code></td><td>transport</td><td>Managed OpenSSH tunnel through a bastion</td></tr>
+        <tr><td><code>httpAdapter(options)</code></td><td>adapter</td><td><code>{ kind, connect, request, close }</code></td></tr>
+        <tr><td><code>defineAdapters(map)</code></td><td>factory</td><td>Freezes a named adapter map</td></tr>
+        <tr><td><code>defineOperations(map)</code></td><td>factory</td><td>Rejects any operation missing <code>run</code>, <code>validate</code>, or an access declaration</td></tr>
+        <tr><td><code>createDataLayer(options)</code></td><td>factory</td><td><code>{ adapter, execute, close, adapters, operations }</code></td></tr>
+        <tr><td><code>DataAdapterError</code></td><td>error</td><td>Carries <code>code</code>, and <code>status</code> where applicable</td></tr>
+      </tbody></table>
+      <div class="doc-code"><div class="doc-code-head"><span>httpAdapter options</span><b>SERVER</b></div><pre><code data-snippet="adapter"></code></pre></div>
+      <p class="doc-lead">Each operation is <code>{ adapter, validate, run, authorize | public: true }</code>. <code>execute(name, input, context)</code> validates first, authorizes second, connects the adapter lazily, and only then runs. A <code>validate()</code> returning <code>false</code> raises <code>SFC_DATA_INVALID_INPUT</code>; an <code>authorize()</code> not returning exactly <code>true</code> raises <code>SFC_DATA_FORBIDDEN</code> with status 403.</p>
+      <table class="doc-table"><thead><tr><th>ERROR CODE</th><th>CAUSE</th></tr></thead><tbody>
+        <tr><td><code>SFC_DATA_INVALID_INPUT</code></td><td>Operation input was rejected by <code>validate()</code></td></tr>
+        <tr><td><code>SFC_DATA_FORBIDDEN</code></td><td><code>authorize()</code> did not return <code>true</code></td></tr>
+        <tr><td><code>SFC_DATA_UNKNOWN_OPERATION</code></td><td>No operation with that name</td></tr>
+        <tr><td><code>SFC_DATA_UNKNOWN_ADAPTER</code></td><td>Operation names an undeclared adapter</td></tr>
+        <tr><td><code>SFC_DATA_ORIGIN</code></td><td>Request left the configured origin</td></tr>
+        <tr><td><code>SFC_DATA_ABSOLUTE_URL</code></td><td>Absolute URL where only paths are allowed</td></tr>
+        <tr><td><code>SFC_DATA_HTTP_ERROR</code></td><td>Non-2xx response, unless <code>throwHttpErrors: false</code></td></tr>
+        <tr><td><code>SFC_DATA_INVALID_JSON</code></td><td>JSON content type with an unparseable body</td></tr>
+        <tr><td><code>SFC_DATA_OAUTH_FAILED</code></td><td>Token endpoint rejected the client credentials</td></tr>
+        <tr><td><code>SFC_DATA_CLOSED</code></td><td>Use of a closed data layer</td></tr>
+      </tbody></table>
+    </section>
+
+    <section class="doc-section" id="sql"><div class="doc-section-head"><span>05.10</span><div><h2>The SQL contract</h2><p class="doc-lead">Application code issues portable <code>$1</code>-parameterized SQL against six methods. Drivers own placeholder conversion, connections, and dialect details; no module imports a database driver directly.</p></div></div>
+      <table class="doc-table"><thead><tr><th>METHOD</th><th>RETURNS</th><th>USE</th></tr></thead><tbody>
+        <tr><td><code>query(sql, params)</code></td><td>rows</td><td>Multi-row reads</td></tr>
+        <tr><td><code>get(sql, params)</code></td><td>first row</td><td>Single-row reads</td></tr>
+        <tr><td><code>execute(sql, params)</code></td><td>result</td><td>Parameterized writes</td></tr>
+        <tr><td><code>exec(sql)</code></td><td>void</td><td>Schema statements</td></tr>
+        <tr><td><code>transaction(work)</code></td><td>work result</td><td>Atomic units</td></tr>
+        <tr><td><code>close()</code></td><td>void</td><td>Release the connection</td></tr>
+      </tbody></table>
+      <p class="doc-lead"><code>assertSqlAdapter(adapter)</code> verifies all six methods and a non-empty <code>dialect</code> string. <code>SFC_SQL_ADAPTER=sqlite</code> selects the local <code>better-sqlite3</code> driver and <code>SFC_SQLITE_PATH</code> names its file; with no explicit adapter, a Netlify runtime environment selects the managed Postgres driver automatically.</p>
+    </section>
+
+    <section class="doc-section" id="routes"><div class="doc-section-head"><span>05.11</span><div><h2>Route attributes</h2><p class="doc-lead">One <code>&lt;route&gt;</code> declaration per routable component. The build validates every declaration before emitting output.</p></div></div>
+      <table class="doc-table"><thead><tr><th>ATTRIBUTE</th><th>VALUE</th><th>MEANING</th></tr></thead><tbody>
+        <tr><td><code>path</code></td><td><code>/guides/:id</code></td><td>URL pattern; <code>:name</code> segments become route parameters</td></tr>
+        <tr><td><code>methods</code></td><td><code>GET</code></td><td>HTTP methods served for this route</td></tr>
+        <tr><td><code>prerender</code></td><td>source name or <code>skip</code></td><td>Required for dynamic paths in production</td></tr>
+        <tr><td><code>layout</code></td><td>custom-element tag</td><td>Persistent shell emitted as Declarative Shadow DOM</td></tr>
+        <tr><td><code>layout-*</code></td><td>string</td><td>Forwarded to the layout element as an attribute</td></tr>
+        <tr><td><code>redirect</code></td><td>target path</td><td>Declares a redirect instead of a page</td></tr>
+        <tr><td><code>method</code></td><td><code>301</code> | <code>302</code></td><td>Redirect kind; <code>301</code> replaces history</td></tr>
+      </tbody></table>
+      <div class="doc-code"><div class="doc-code-head"><span>route declarations</span><b>SFC</b></div><pre><code data-snippet="routes"></code></pre></div>
+    </section>
+
+    <section class="doc-section" id="env"><div class="doc-section-head"><span>05.12</span><div><h2>Environment variables</h2><p class="doc-lead">Loading order is <code>.env</code>, <code>.env.local</code>, <code>.env.&lt;mode&gt;</code>, <code>.env.&lt;mode&gt;.local</code>. Variables already present in the process always win.</p></div></div>
+      <table class="doc-table"><thead><tr><th>VARIABLE</th><th>SCOPE</th><th>EFFECT</th></tr></thead><tbody>
+        <tr><td><code>HOST</code> / <code>PORT</code></td><td>production</td><td>Bind address for <code>serve</code></td></tr>
+        <tr><td><code>DEV_HOST</code></td><td>development</td><td>Development server binds to loopback unless set</td></tr>
+        <tr><td><code>ENABLE_DEMO_SERVICES</code></td><td>production</td><td>Enables the public realtime testing namespaces only</td></tr>
+        <tr><td><code>SFC_SQL_ADAPTER</code></td><td>server</td><td><code>sqlite</code> selects the local driver</td></tr>
+        <tr><td><code>SFC_SQLITE_PATH</code></td><td>server</td><td>SQLite database file</td></tr>
+        <tr><td><code>SFC_DATA_DIR</code></td><td>server</td><td>Directory for SQLite files; defaults to <code>.data/</code></td></tr>
+      </tbody></table>
+      <aside class="doc-note"><b>ONE RULE</b><p>Only <code>.env.example</code> is committed, and it holds placeholders. Every real variant is ignored by Git, and <code>sfc-cli audit</code> fails a project where that is not true.</p></aside>
+    </section>
+    <a class="doc-next" href="/internals"><span>RELATED CHAPTER<strong>How the compiler and runtime work</strong></span><i>→</i></a>
+  </article>
+</template>
+<script lang="ts">
+const snippets: Record<string, string> = {
+  install: `npm link                    # during framework development\nsfc-cli --help\n\n# or through the package script\nnpm run cli -- create capybara-app`,
+  create: `sfc-cli create my-app\nsfc-cli create my-app --no-install\nsfc-cli create my-app --no-interactive\n\ncd my-app\nnpm install\nnpm run serve:dev`,
+  config: `# interactive: prompts for name, secrecy, and value\nsfc-cli config\n\n# scripted\nsfc-cli config --mode production --no-interactive \\\n  --set API_BASE_URL=https://api.example.com \\\n  --set FEATURE_FLAGS=beta\n\n# writes .env.production.local with mode 0600`,
+  audit: `sfc-cli audit .\nsfc-cli audit . --strict      # warnings fail too\nsfc-cli audit . --json        # machine readable\n\n# exit code 1 on any error, or on any warning with --strict`,
+  adapt: `sfc-cli adapt inventory \\\n  --base-url https://inventory.internal \\\n  --auth bearer \\\n  --operation list-items \\\n  --path /v1/items \\\n  --method GET \\\n  --access authenticated \\\n  --no-interactive\n\n# writes adapters/inventory.js\n# appends INVENTORY_BASE_URL and # INVENTORY_TOKEN=replace-me\n# to .env.example`,
+  lifecycle: `constructor\n  └ attach shadow root when static shadow = true\nconnectedCallback\n  1. route + query params assigned\n  2. template fragment cloned (unless server-rendered)\n  3. global then component styles attached\n  4. image cache, realtime fields, directives connected\n  5. {{ params }} interpolated\n  6. your connectedCallback runs — DOM is ready\n  7. method decorators wired one microtask later\ndisconnectedCallback\n  directives, realtime, and wired listeners released\n  then your disconnectedCallback runs`,
+  directives: `<button @click="save">Save</button>\n<button @click="remove('draft', $event)">Remove</button>\n\n<a @hover="{ color: '#c4ff4d', transform: 'translateY(-2px)' }">\n  Inline CSS, restored on mouseleave\n</a>\n<div @hover="preview">Method call on mouseenter</div>`,
+  realtime: `import { realtimeValue } from '/src/runtime/index'\n\nexport default class extends HTMLElement {\n  static tag = 'live-counter'\n  count = realtimeValue('docs/advanced/count', 0)\n\n  async connectedCallback() {\n    this.count.subscribe(value => {\n      this.querySelector('b')!.textContent = String(value)\n    })\n    await this.count.update(current => current + 1)\n  }\n}`,
+  adapter: `httpAdapter({\n  baseUrl,                     // required, HTTPS off loopback\n  auth,                        // bearer | basic | api-key | oauth2 | mTLS\n  headers,                     // default request headers\n  timeout: 10_000,             // per-request milliseconds\n  maxResponseBytes: 2 * 1024 * 1024,\n  allowAbsoluteUrls: false,    // off: requests cannot leave the origin\n  transport,                   // optional managed SSH tunnel\n  tls                          // client certificate material\n})\n\n// request(path, { method, headers, body, timeout,\n//                 maxResponseBytes, throwHttpErrors })\n//   → { status, headers, data }`,
+  routes: `<${'route'} path="/guides" methods="GET" />\n<${'route'} path="/guides/:id" methods="GET" prerender="guides" />\n<${'route'} path="/account/:id" methods="GET" prerender="skip" />\n<${'route'} path="/guides" methods="GET"\n       layout="sfc-doc-shell" layout-section="guides" />\n<${'route'} redirect="/guides" method="301" />`
+};
+export default class extends HTMLElement {
+  static tag = 'sfc-reference-page';
+  connectedCallback() {
+    this.querySelectorAll('[data-snippet]').forEach(node => {
+      node.textContent = snippets[node.getAttribute('data-snippet') as string];
+    });
+  }
+}
+</script>
+<style>
+sfc-reference-page .doc-table code { font-size: 10px; white-space: nowrap; }
+sfc-reference-page .doc-table td:last-child code { white-space: normal; }
+sfc-reference-page .doc-lead code, sfc-reference-page .doc-note code, sfc-reference-page .doc-hero code { padding: 1px 5px; color: #c4ff4d; border: 1px solid #293029; background: #101310; font: 10px ui-monospace, monospace; }
+</style>
+<route path="/reference" methods="GET" layout="sfc-doc-shell" layout-section="reference" />

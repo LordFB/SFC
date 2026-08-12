@@ -11,7 +11,7 @@ test('route metadata drives one persistent layout without component nesting', ()
   assert.match(main, /data-sfc-route-layout/);
   assert.match(main, /prepareRouteMount\(matchedRoute, path\)/);
 
-  for (const name of ['Basics', 'Intermediate', 'Advanced', 'Internals', 'Playground']) {
+  for (const name of ['Basics', 'Intermediate', 'Advanced', 'Internals', 'Reference', 'Playground']) {
     const component = readFileSync(new URL(`components/docs/${name}.sfc`, root), 'utf8');
     assert.match(component, /<route\b[^>]*layout="sfc-doc-shell"/, `${name} should declare its shared layout`);
     assert.doesNotMatch(component, /<sfc-doc-shell\b/, `${name} must render page content, not another shell`);
@@ -35,7 +35,11 @@ test('production hides demo-only routes when server capabilities are unavailable
   assert.match(main, /routes\.filter\(route => !demoOnlyPaths\.has/);
   assert.match(main, /dataset\.sfcDemoServices/);
   assert.ok((shell.match(/data-demo-only/g) || []).length >= 4);
-  assert.match(internals, /data-demo-only href="\/playground"/);
+  for (const [name, component] of [['Shell', shell], ['Internals', internals]]) {
+    for (const [anchor] of component.matchAll(/<a\b[^>]*href="\/(?:playground|stress-testing|testing)"[^>]*>/g)) {
+      assert.match(anchor, /data-demo-only/, `${name} links to a demo-only route without the availability guard`);
+    }
+  }
   assert.match(server, /urlPath === '\/__sfc\/capabilities'/);
   assert.match(server, /demoServices: DEMO_SERVICES_ENABLED/);
 });

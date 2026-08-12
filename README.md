@@ -13,6 +13,7 @@ together without a virtual DOM.
 | `/intermediate` | Backend introduction | Route handlers, secure data adapters, validation, and JSON responses |
 | `/advanced` | Full stack | SQLite-backed reactive values, SSE fan-out, and lifecycle cleanup |
 | `/internals` | Framework internals | Parse, transform, route discovery, lazy loading, and custom-element mounting |
+| `/reference` | CLI and API reference | Every `sfc-cli` command plus the runtime, directive, realtime, adapter, and SQL APIs |
 | `/playground` | SFC Playground | Self-hosted Monaco editor with a sandboxed, live component preview |
 | `/stress-testing` | Performance lab | Concurrent writes, pub/sub latency, p95 response time, and persistence checks |
 
@@ -53,6 +54,25 @@ sfc-cli adapt inventory                     # secure HTTP adapter wizard
 For automation, add `--no-interactive`. `config` accepts one or more
 `--set NAME=value` arguments. `adapt --help` lists flags for service URL,
 authentication, fixed same-origin operation path, HTTP method, and access.
+
+| Command | Purpose | Writes |
+| --- | --- | --- |
+| `create [name]` | Scaffold a runnable project | New project directory |
+| `config` | Configure ignored environment values | `.env.<mode>.local`, mode `0600` |
+| `audit [directory]` | Check framework and security standards | Nothing; exit code only |
+| `adapt [name]` | Generate a secure server-side HTTP adapter | `adapters/<name>.js`, `.env.example` |
+
+`create` refuses a non-empty target and removes a directory it created if
+scaffolding fails. `config` rejects values containing newlines or null bytes so
+one assignment cannot forge another. `audit` emits coded findings, fails on any
+error, promotes warnings to failures with `--strict`, and reports
+`{ root, files, findings, errors, warnings }` under `--json`. `adapt` writes
+variable *names* only: secrets stay in the environment and are read at runtime,
+base URLs must use HTTPS off loopback, and the operation path is fixed in the
+generated source.
+
+The `/reference` chapter documents every command, flag, and audit code together
+with the complete runtime, directive, realtime, data-adapter, and SQL APIs.
 
 ## Build and preview
 

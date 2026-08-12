@@ -27,7 +27,7 @@
       <div class="architecture"><div class="source">SFC ROUTES</div><div class="source">PUBLIC DATA</div><span>BUILD PLUGIN</span><div class="outputs"><b>index.html</b><b>route-data.json</b><b>route chunk</b><b>manifest</b></div></div>
       <div class="doc-code"><div class="doc-code-head"><span>production guarantees</span><b>FAIL THE BUILD</b></div><pre><code data-snippet="validation"></code></pre></div>
     </section>
-    <a class="doc-next" data-demo-only href="/playground"><span>NEXT CHAPTER<strong>Build in the Monaco playground</strong></span><i>→</i></a>
+    <a class="doc-next" href="/reference"><span>NEXT CHAPTER<strong>CLI commands and the full API reference</strong></span><i>→</i></a>
   </article>
 </template>
 <script lang="ts">
